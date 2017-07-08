@@ -48,6 +48,17 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         Pre-process the whole dataset and create two dictionaries with the
         tokens of each example.
         The dictionaries are dumped into json files.
+
+        Dictionaries structure:
+        - x: passages separated in sentences and split in words.
+        - cx: passages split in characters.
+        - rx: reference to the article and paragraph correspondent to each question (index)
+        - q: questions split in words.
+        - cq: questions split in characters
+        - y: tuple with start and end indices
+        - ids: the unique id in squad
+        - answerss: the answer text
+
     """
     # Define the word tokenizer. Only NLTK for now
     sent_tokenize = nltk.sent_tokenize
