@@ -9,10 +9,10 @@ from tqdm import tqdm
 from utils import get_word_span, get_word_idx, process_tokens
 
 
-def get_word2vec(args, word_counter):
-    glove_path = os.path.join(args.glove_dir, "glove.{}.{}d.txt".format(args.glove_corpus, args.glove_vec_size))
+def get_word2vec(config, word_counter):
+    glove_path = os.path.join(config['glove']['glove_dir'], "glove.{}.{}d.txt".format(config['glove']['glove_corpus'], config['glove']['glove_vec_size']))
     sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
-    total = sizes[args.glove_corpus]
+    total = sizes[config['glove']['glove_corpus']]
     word2vec_dict = {}
     with open(glove_path, 'r', encoding='utf-8') as fh:
         for line in tqdm(fh, total=total):
@@ -32,18 +32,18 @@ def get_word2vec(args, word_counter):
     return word2vec_dict
 
 
-def save(args, data, shared, data_type):
+def save(config, data, shared, data_type):
     """
         Save json files for dictionaries data and shared to the directory
-        specified in args.
+        specified in config.
     """
-    data_path = os.path.join(args.target_dir, "data_{}.json".format(data_type))
-    shared_path = os.path.join(args.target_dir, "shared_{}.json".format(data_type))
+    data_path = os.path.join(config['directories']['target_dir'], "data_{}.json".format(data_type))
+    shared_path = os.path.join(config['directories']['target_dir'], "shared_{}.json".format(data_type))
     json.dump(data, open(data_path, 'w'))
     json.dump(shared, open(shared_path, 'w'))
 
 
-def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="default", in_path=None):
+def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="default", in_path=None):
     """
         Pre-process the whole dataset and create two dictionaries with the
         tokens of each example.
@@ -69,7 +69,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
     # if not args.split:
     #     sent_tokenize = lambda para: [para]
 
-    source_path = in_path or os.path.join(args.source_dir, "{}-v1.1.json".format(data_type))
+    source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
     source_data = json.load(open(source_path, 'r'))
 
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
@@ -158,11 +158,12 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
                 idxs.append(len(idxs))
                 answerss.append(answers)
 
+            # TODO: Add debug option as in the original code
             # if args.debug:
             #     break
 
-    word2vec_dict = get_word2vec(args, word_counter)
-    lower_word2vec_dict = get_word2vec(args, lower_word_counter)
+    word2vec_dict = get_word2vec(config, word_counter)
+    lower_word2vec_dict = get_word2vec(config, lower_word_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
@@ -172,4 +173,4 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
               'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
 
     print("saving ...")
-    save(args, data, shared, out_name)
+    save(config, data, shared, out_name)
