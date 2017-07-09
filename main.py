@@ -2,7 +2,7 @@ import argparse
 import configparser
 from read_data import prepro_each
 import sys
-import tensorflow as tf
+#import tensorflow as tf
 
 
 def main(config):
