@@ -65,9 +65,8 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     def word_tokenize(tokens):
         return [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
 
-    # TODO: Understand the following piece of code and reomove it if unnecessary
-    # if not args.split:
-    #     sent_tokenize = lambda para: [para]
+    if not config['pre']['split']: #if the user doesn't want to split the paragraph into sentences 
+         sent_tokenize = lambda para: [para]
 
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
     source_data = json.load(open(source_path, 'r'))
