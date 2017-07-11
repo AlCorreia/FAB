@@ -1,0 +1,34 @@
+{
+    "glove":{ 
+		"Comment_":"#Specifications of the glove model to use",
+        "dir":"./data/glove",
+        "corpus":"6B",
+        "vec_size":"300",
+        "db":"write-math"
+    },
+	"directories":{
+		"Comment_":"#Directories info.",
+		"source_dir":"./data/squad/",
+	    "target_dir":"./",
+		"out_dir":"./"
+	},
+	"pre":{
+		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
+		"run": false,
+	    "lower_word": true,
+		"finetune": false,
+		"split": true,
+	    "word_count_th": 10,
+		"char_count_th": 50,
+		"known_if_glove": true,
+		"use_glove_for_unk": true
+	},
+	"model":{ 
+		"Comment_":"All variables related to the model's architecture and training",
+		"run":true,
+		"learning_rate":0.1,
+		"steps":10e5,
+		"arch":[512,256,128],
+		"nonlinearity":"tf.nn.relu"
+	}
+}
