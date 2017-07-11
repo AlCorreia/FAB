@@ -5,14 +5,15 @@ import nltk
 # nltk.download('punkt') Uncomment if you haven't installed the package yet
 import pandas as pd
 import os
+import pdb
 from tqdm import tqdm
 from utils import get_word_span, get_word_idx, process_tokens
 
 
 def get_word2vec(config, word_counter):
-    glove_path = os.path.join(config['glove']['glove_dir'], "glove.{}.{}d.txt".format(config['glove']['glove_corpus'], config['glove']['glove_vec_size']))
+    glove_path = os.path.join(config['glove']['dir'], "glove.{}.{}d.txt".format(config['glove']['corpus'], config['glove']['vec_size']))
     sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
-    total = sizes[config['glove']['glove_corpus']]
+    total = sizes[config['glove']['corpus']]
     word2vec_dict = {}
     with open(glove_path, 'r', encoding='utf-8') as fh:
         for line in tqdm(fh, total=total):
@@ -55,8 +56,10 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         - rx: reference to the article and paragraph correspondent to each question (index)
         - q: questions split in words.
         - cq: questions split in characters
-        - y: tuple with start and end indices
+        - y: tuple with start and end indices of the word tokens
+        - cy: tuple with start and end indices of the character tokens
         - ids: the unique id in squad
+        - idxs: incremental id of each quesiton
         - answerss: the answer text
 
     """
@@ -130,13 +133,13 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     w1 = xi[yi1[0]][yi1[1]-1]
                     i0 = get_word_idx(context, xi, yi0)
                     i1 = get_word_idx(context, xi, (yi1[0], yi1[1]-1))
-                    cyi0 = answer_start - i0
-                    cyi1 = answer_stop - i1 - 1
+                    cyi0 = answer_start - i0 #in case the answer_start does not correspond to the beginning of a word from tokenizer
+                    cyi1 = answer_stop - i1 - 1 #in case the answer_end does not correspond to the end of a word from tokenizer 
                     # print(answer_text, w0[cyi0:], w1[:cyi1+1])
-                    assert answer_text[0] == w0[cyi0], (answer_text, w0, cyi0)
-                    assert answer_text[-1] == w1[cyi1]
-                    assert cyi0 < 32, (answer_text, w0)
-                    assert cyi1 < 32, (answer_text, w1)
+                    assert answer_text[0] == w0[cyi0], (answer_text, w0, cyi0) #check if first character matches
+                    assert answer_text[-1] == w1[cyi1] #check if last character matches
+                    assert cyi0 < 32, (answer_text, w0) #why?
+                    assert cyi1 < 32, (answer_text, w1) #why?
 
                     yi.append([yi0, yi1])
                     cyi.append([cyi0, cyi1])
@@ -152,7 +155,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 y.append(yi)
                 cy.append(cyi)
                 rx.append(rxi)
-                rcx.append(rxi)
+                #rcx.append(rxi) Delete if not useful. It is the same as rx.
                 ids.append(qa['id'])
                 idxs.append(len(idxs))
                 answerss.append(answers)
@@ -173,3 +176,73 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     print("saving ...")
     save(config, data, shared, out_name)
+
+	
+def read_data(config, data_type, ref, data_filter=None):
+    data_path = os.path.join(config['directories']['out_dir'], "data_{}.json".format(data_type))
+    shared_path = os.path.join(config['directories']['out_dir'], "shared_{}.json".format(data_type))
+    with open(data_path, 'r') as fh:
+        data = json.load(fh)
+    with open(shared_path, 'r') as fh:
+        shared = json.load(fh)
+
+    num_examples = len(next(iter(data.values()))) #number of questions
+    if data_filter is None:
+        valid_idxs = range(num_examples)
+    else:
+        mask = []
+        keys = data.keys()
+        values = data.values()
+        for vals in zip(*values): #each question
+            each = {key: val for key, val in zip(keys, vals)} #rebuilt dictionary for each question
+            mask.append(data_filter(each, shared))
+        valid_idxs = [idx for idx in range(len(mask)) if mask[idx]]
+
+    print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
+    if not ref:
+        word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
+        word_counter = shared['lower_word_counter'] if config['pre']['lower_word'] else shared['word_counter']
+        char_counter = shared['char_counter']
+        if config['pre']['finetune']: #false
+            shared['unk_word2idx'] = {word: idx + 2 for idx, word in
+                                  enumerate(word for word, count in word_counter.items()
+                                            if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
+        else:
+            assert config['pre']['known_if_glove']
+            assert config['pre']['use_glove_for_unk']
+            shared['unk_word2idx'] = {word: idx + 2 for idx, word in #add 2 toUNK and NULL
+                                  enumerate(word for word, count in word_counter.items()
+                                            if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
+        shared['char2idx'] = {char: idx + 2 for idx, char in
+                              enumerate(char for char, count in char_counter.items()
+                                      if count > config['pre']['char_count_th'])} #threshold =50
+        NULL = "-NULL-"
+        UNK = "-UNK-"
+        shared['unk_word2idx'][NULL] = 0
+        shared['unk_word2idx'][UNK] = 1
+        shared['char2idx'][NULL] = 0
+        shared['char2idx'][UNK] = 1
+        #json.dump({'unk_word2idx': shared['unk_word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w')) why to use this line?
+    else:
+        new_shared = json.load(open(shared_path, 'r'))
+        for key, val in new_shared.items():
+            shared[key] = val
+
+    if config['pre']['use_glove_for_unk']:
+        # create word2idx for uknown and known words
+        word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
+        word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
+        shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
+        known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
+        # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
+        emb_mat_known_words = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
+        shared['emb_mat_known_words'] = emb_mat_known_words
+        emb_mat_unk_words = np.array([np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
+                        for idx in range(word_vocab_size)]) #create random vectors for new words
+        shared['emb_mat_unk_words']=emb_mat_unk_words
+
+    data_set.data=data
+    data_set.type=data_type
+    data_set.shared=shared
+    data_set.valid_idxs=valid_idxs
+    return data_set

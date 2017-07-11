@@ -1,16 +1,20 @@
 import argparse
-import configparser
-from read_data import prepro_each
+#import configparser
+from read_data import prepro_each, read_data
 import sys
+import json
+import os
+import pdb
 #import tensorflow as tf
 
-
 def main(config):
-    prepro_each(config=config, data_type='train')
-
-
+    if config['pre']['run']:
+        prepro_each(config=config, data_type='train',out_name='train') #to preprocess the train data
+        prepro_each(config=config, data_type='dev',out_name='dev') #to preprocess  the dev data
+    if config['model']['run']:
+        data_train = read_data(config,'dev',0)
 if __name__ == '__main__':
-    config = configparser.ConfigParser()
-    config.read('config.ini')
 
+    with open('config.json') as json_data_file:
+        config = json.load(json_data_file)
     main(config)
