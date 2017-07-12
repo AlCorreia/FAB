@@ -6,6 +6,7 @@ import nltk
 import pandas as pd
 import os
 import pdb
+from random import randint
 from tqdm import tqdm
 from utils import get_word_span, get_word_idx, process_tokens
 
@@ -241,8 +242,16 @@ def read_data(config, data_type, ref, data_filter=None):
                         for idx in range(word_vocab_size)]) #create random vectors for new words
         shared['emb_mat_unk_words']=emb_mat_unk_words
 
-    data_set.data=data
-    data_set.type=data_type
-    data_set.shared=shared
-    data_set.valid_idxs=valid_idxs
+    data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs}
     return data_set
+
+def get_batch_idxs(config, data_set):
+    nQuestions=len(next(iter(data_set['data'].values())))#compute number of questions
+    n=0
+    batch_idxs=set();
+    while (n<config['model']['batch_size']):
+        batch_idxs.add(randint(0,nQuestions-1))
+        n=len(batch_idxs)
+    batch_idxs=list(batch_idxs)
+    batch_idxs.sort()
+    return batch_idxs
