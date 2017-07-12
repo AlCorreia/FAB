@@ -69,7 +69,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     def word_tokenize(tokens):
         return [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
 
-    if not config['pre']['split']: #if the user doesn't want to split the paragraph into sentences 
+    if not config['pre']['split']: #if the user doesn't want to split the paragraph into sentences
          sent_tokenize = lambda para: [para]
 
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
@@ -135,7 +135,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     i0 = get_word_idx(context, xi, yi0)
                     i1 = get_word_idx(context, xi, (yi1[0], yi1[1]-1))
                     cyi0 = answer_start - i0 #in case the answer_start does not correspond to the beginning of a word from tokenizer
-                    cyi1 = answer_stop - i1 - 1 #in case the answer_end does not correspond to the end of a word from tokenizer 
+                    cyi1 = answer_stop - i1 - 1 #in case the answer_end does not correspond to the end of a word from tokenizer
                     # print(answer_text, w0[cyi0:], w1[:cyi1+1])
                     assert answer_text[0] == w0[cyi0], (answer_text, w0, cyi0) #check if first character matches
                     assert answer_text[-1] == w1[cyi1] #check if last character matches
@@ -178,7 +178,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     print("saving ...")
     save(config, data, shared, out_name)
 
-	
+
 def read_data(config, data_type, ref, data_filter=None):
     data_path = os.path.join(config['directories']['out_dir'], "data_{}.json".format(data_type))
     shared_path = os.path.join(config['directories']['out_dir'], "shared_{}.json".format(data_type))
@@ -246,12 +246,12 @@ def read_data(config, data_type, ref, data_filter=None):
     return data_set
 
 def get_batch_idxs(config, data_set):
-    nQuestions=len(next(iter(data_set['data'].values())))#compute number of questions
-    n=0
-    batch_idxs=set();
-    while (n<config['model']['batch_size']):
-        batch_idxs.add(randint(0,nQuestions-1))
-        n=len(batch_idxs)
-    batch_idxs=list(batch_idxs)
+    nQuestions = len(next(iter(data_set['data'].values())))#compute number of questions
+    n = 0
+    batch_idxs = set();
+    while n < config['model']['batch_size']:
+        batch_idxs.add(randint(0, nQuestions-1))
+        n = len(batch_idxs)
+    batch_idxs = list(batch_idxs)
     batch_idxs.sort()
     return batch_idxs

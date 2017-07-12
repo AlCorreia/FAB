@@ -1,5 +1,5 @@
 {
-    "glove":{ 
+    "glove":{
 		"Comment_":"#Specifications of the glove model to use",
         "dir":"./data/glove",
         "corpus":"6B",
@@ -23,13 +23,23 @@
 		"known_if_glove": true,
 		"use_glove_for_unk": true
 	},
-	"model":{ 
+	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
+    "is_training":true,
 		"run":true,
 		"learning_rate":0.1,
 		"batch_size":10,
 		"steps":10e5,
 		"arch":[512,256,128],
-		"nonlinearity":"tf.nn.relu"
+		"nonlinearity":"tf.nn.relu",
+    "n_hidden":128,
+    "max_num_sents":5,
+    "max_sent_size":10,
+    "max_ques_size":20,
+    "max_word_size":15,
+    "vocabulary_size":200000,
+    "char_vocabulary_size":30,
+    "input_keep_prob":0.8,
+    "share_lstm_weights":true
 	}
 }
