@@ -1,6 +1,6 @@
 import argparse
 #import configparser
-from read_data import prepro_each, read_data
+from read_data import prepro_each, read_data, get_batch_idxs
 import sys
 import json
 import os
@@ -13,6 +13,8 @@ def main(config):
         prepro_each(config=config, data_type='dev',out_name='dev') #to preprocess  the dev data
     if config['model']['run']:
         data_train = read_data(config,'dev',0)
+        batch_idxs=get_batch_idxs(config,data_train)
+        pdb.set_trace()
 if __name__ == '__main__':
 
     with open('config.json') as json_data_file:

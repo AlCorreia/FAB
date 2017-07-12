@@ -27,6 +27,7 @@
 		"Comment_":"All variables related to the model's architecture and training",
 		"run":true,
 		"learning_rate":0.1,
+		"batch_size":10,
 		"steps":10e5,
 		"arch":[512,256,128],
 		"nonlinearity":"tf.nn.relu"
