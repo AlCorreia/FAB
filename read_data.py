@@ -246,7 +246,8 @@ def read_data(config, data_type, ref, data_filter=None):
     return data_set
 
 def get_batch_idxs(config, data_set):
-    nQuestions = len(next(iter(data_set['data'].values())))#compute number of questions
+    # Compute number of questions
+    nQuestions = len(next(iter(data_set['data'].values())))
     n = 0
     batch_idxs = set();
     while n < config['model']['batch_size']:
