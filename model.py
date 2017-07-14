@@ -31,12 +31,11 @@ class Model(object):
         self.global_step = tf.Variable(0, trainable=False)
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
-        # TODO: Add decay parameters to config
         initial_learning_rate = config['model']['learning_rate']
         self.learning_rate = tf.train.exponential_decay(learning_rate=initial_learning_rate,
                                                         global_step=self.global_step,
-                                                        decay_steps=1000,
-                                                        decay_rate=0.96,
+                                                        decay_steps=config['mode']['decay_steps'],
+                                                        decay_rate=config['mode']['decay_rate'],
                                                         staircase=True)
 
         # Define placeholders
