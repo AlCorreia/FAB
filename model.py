@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from read_data import get_batch_idxs
 
+VERY_LOW_NUMBER=-1e30
 
 class Model(object):
     def __init__(self, config):
@@ -41,26 +42,28 @@ class Model(object):
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
-        self.x = tf.placeholder('int32', [self.batch_size, None, None], name='x')
+        self.x = tf.placeholder('int32', [self.batch_size, None], name='x') #number of batches and number of words
         # self.cx = tf.placeholder('int32', [self.batch_size, None, None, W], name='cx')
-        self.x_mask = tf.placeholder('bool', [self.batch_size, None, None], name='x_mask')
+        self.x_mask = tf.placeholder('bool', [self.batch_size, None], name='x_mask')
         self.q = tf.placeholder('int32', [self.batch_size, None], name='q')
         # self.cq = tf.placeholder('int32', [self.batch_size, None, W], name='cq')
-        self.q_mask = tf.placeholder('bool', [self.batch_size, None], name='q_mask')
-        self.y = tf.placeholder('bool', [self.batch_size, None, None], name='y')
-        self.y2 = tf.placeholder('bool', [self.batch_size, None, None], name='y2')
+        self.y = tf.placeholder('bool', [self.batch_size, None], name='y')
+        self.y2 = tf.placeholder('bool', [self.batch_size, None], name='y2')
         self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder('float', [None, self.word_emb_size], name='new_emb_mat')
 
+		
+		#Masks
+		self.x_mask = tf.sign(x)
+		self.q_mask = tf.sign(q)
         # TODO: Think of a better way to define these dimensions
         # 1. Capitals letters: indicates type of element.
-        #    B: batch, S: sentence, Q: question, W: word, V: vocabulary, C:char,
+        #    B: batch, P: paragraph, Q: question, W: word, V: vocabulary, C:char,
         #    E: embedding, H: hidden
         # 2. Lowercase letters: indicates a measure
         #    m: maximum, n: number, s: size, o: out
         self.Bs = config['model']['batch_size']
-        self.Sn = config['model']['max_num_sents']
-        self.Ss = config['model']['max_sent_size']
+        self.Ps = config['model']['max_par_size']
         self.Qs = config['model']['max_ques_size']
         self.Wm = config['model']['max_word_size']
         self.WVs = config['model']['vocabulary_size']
@@ -71,8 +74,7 @@ class Model(object):
         self.Hn = config['model']['n_hidden'] # Number of hidden units in the LSTM cell
 
         # Redefine some parameters based on the actual tensor dimensions
-        self.Ss = tf.shape(self.x)[2]
-        self.Sn = tf.shape(self.x)[1]
+        self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
 
         # Define a dictionary to hold references to the model's tensors
@@ -120,7 +122,7 @@ class Model(object):
                 word_emb_mat = tf.concat(0, [word_emb_mat, self.new_emb_mat])
 
             with tf.name_scope("word"):
-                Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Sn, Ss, Hn]
+                Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
                 self.tensor_dict['x'] = Ax
                 self.tensor_dict['q'] = Aq
@@ -129,11 +131,11 @@ class Model(object):
         cell = BasicLSTMCell(self.n_hidden, state_is_tuple=True)
         d_cell = SwitchableDropoutWrapper(cell, self.is_training, input_keep_prob=config.input_keep_prob)
         # Calculate the number of used values in the each matrix
-        x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 2)  # [Bs, Sn]
+        x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 1)  # [Bs]
         q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [Bs]
 
         with tf.variable_scope("prepro"):
-            # [Bs, Sn, Hn], [Bs, Hn]
+            # [Bs, Qs, 2Hn], [Bs, Hn]
             (fw_u, bw_u), ((_, fw_u_f), (_, bw_u_f)) = \
                 tf.nn.bidirectional_dynamic_rnn(cell_fw=d_cell,
                                                 cell_bw=d_cell,
@@ -144,7 +146,7 @@ class Model(object):
             u = tf.concat(2, [fw_u, bw_u])
             if config['model']['share_lstm_weights']:
                 tf.get_variable_scope().reuse_variables()
-                # [Bs, Sn, Ss, 2Hn]
+                # [Bs, Ps, 2Hn]
                 (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
                                                                   cell_bw=cell,
                                                                   inputs=Ax,
@@ -153,20 +155,23 @@ class Model(object):
                                                                   scope='u1')
                 h = tf.concat(3, [fw_h, bw_h])  # [Bs, Sn, Ss, 2Hn]
             else:
-                # [Bs, Sn, Ss, 2Hn]
+                # [Bs, Ps, 2Hn]
                 (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
                                                                   cell_bw=cell,
                                                                   inputs=Ax,
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='h1')
-                h = tf.concat(3, [fw_h, bw_h])  # [Bs, Sn, Ss, 2Hn]
+                h = tf.concat(3, [fw_h, bw_h])  # [Bs, Ps, 2Hn]
             self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
 
         with tf.variable_scope("main"):
+			
+			#AttentionLayer
+			
             # TODO: Implement attention model
-            p0 = h
+            p0 =  attention_layer (x,q, h,u,scope='p0') #[Bs, Ps, 8Hn]
             first_cell = tf.reshape(tf.tile(tf.expand_dims(u, 1),
                                             [1, Sn, 1, 1]),
                                     [self.Bs * self.Sn, self.Qs, 2 * self.Hn])
@@ -280,6 +285,82 @@ class Model(object):
 
 
 # TODO: Reevaluate the need for this. Just copied it because I was tired... haha
+def attention_layer (x,q, h,u,scope=None)
+       """define attention mechanism between vectors h (question) and u (paragraph):
+             att(m,n)  = vec1 . h_m + vec2 . u_n + (vec3 * h_m) . u_n
+        where  .  is the dot product and  *  the elementwise product
+        """
+    mask_matrix=tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x_q,-1),transpose_b=True))
+    with tf.variable_scope(scope):
+        vec1_att = tf.get_variable("att1",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
+        vec2_att = tf.get_variable("att2",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
+        vec3_att = tf.get_variable("att3",dtype='float',shape=[hidden_size]) #[Hs, 1]
+    
+    #shaping all the vectors into a matrix to compute attention values in one matrix multiplication    
+    shaped_h=tf.concat(
+        tf.unstack(
+            value=h,
+            axis=0),
+        axis=0) #[Hs, Ps * Bs]
+    
+    shaped_u = tf.concat(
+        tf.unstack(
+            value=u,
+            axis=0),
+        axis=0) #[Hs, Qs * Bs]
+    
+    #computation of vec1 * h + vec2 * u
+    att_1_Product = tf.reshape(
+        tf.matmul(
+            shaped_h,
+            vec1_att),
+        shape=[batch_size,1,-1]) # [Bs, 1, Ps]
+    
+    att_2_Product = tf.reshape(
+        tf.matmul(
+            shaped_u,
+            vec2_att),
+        shape=[batch_size,-1,1]) # [Bs, Qs, 1]
+
+    att_1_Product = tf.tile(
+        att_1_Product,
+        [1,tf.reduce_max(length(x_q_input)),1]) #[Bs, Qs, Ps]
+    
+    att_2_Product = tf.tile(
+        att_2_Product,
+        [1,1,tf.reduce_max(length(x_input))]) #[Bs, Qs, Ps]
+
+    #computation of (vec3 * h)  . u
+    
+    h_vectorized = tf.multiply(h,att_3_vec) #vect 3 * h
+    att_3_Product = tf.matmul(u,h_vectorized,transpose_b=True) # ((vec 3 * h) . u [Bs, Qs, Ps]
+    att_final=tf.transpose(
+        att_1_Product+att_2_Product+att_3_Product,
+        perm=[0,2,1]) #[Bs, Ps, Qs] 
+    
+    att_final_masked=att_final+tf.multiply(tf.cast(1-mask_matrix,tf.'float'),-3e15) #masking
+
+    #paragraph to question attention
+    p2q = tf.multiply(
+        tf.nn.softmax(logits=att_final_masked,dim=-1),
+        tf.cast(mask_matrix,'float')
+    ) # computing logits, taking into account mask
+    
+    U_a=tf.matmul(p2q,u)
+
+    q2p = tf.nn.softmax(
+        tf.reduce_max(att_final_masked,axis=-1))
+    
+    H_a = tf.tile(
+	    tf.matmul(
+            tf.expand_dims(q2p,1),
+            h),
+	    [1,tf.reduce_max(length(x_input)),1]
+    )
+
+    G = tf.concat([h,U_a,tf.multiply(h,U_a),tf.multiply(h,H_a)],axis=-1)
+    return G
+
 def softsel(target, logits, mask=None, scope=None):
     """
     :param target: [ ..., J, d] dtype=float
