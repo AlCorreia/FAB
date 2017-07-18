@@ -8,7 +8,7 @@ import os
 import pdb
 from random import randint
 from tqdm import tqdm
-from utils import get_word_span, get_word_idx, process_tokens
+from utils import get_word_span, process_tokens
 
 
 def get_word2vec(config, word_counter):
@@ -52,7 +52,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         The dictionaries are dumped into json files.
 
         Dictionaries structure:
-        - x: passages separated in sentences and split in words.
+        - x: passages split in tokens.
         - cx: passages split in characters.
         - rx: reference to the article and paragraph correspondent to each question (index)
         - q: questions split in words.
@@ -65,12 +65,9 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     """
     # Define the word tokenizer. Only NLTK for now
-    sent_tokenize = nltk.sent_tokenize
     def word_tokenize(tokens):
         return [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
 
-    if not config['pre']['split']: #if the user doesn't want to split the paragraph into sentences
-         sent_tokenize = lambda para: [para]
 
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
     source_data = json.load(open(source_path, 'r'))
@@ -94,20 +91,19 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             context = para['context']
             context = context.replace("''", '" ')
             context = context.replace("``", '" ')
-            xi = list(map(word_tokenize, sent_tokenize(context)))
-            xi = [process_tokens(tokens) for tokens in xi]  # process tokens
+            xi = word_tokenize(context)
+            xi = process_tokens(xi)  # process tokens
             # given xi, add chars
-            cxi = [[list(xijk) for xijk in xij] for xij in xi]
+            cxi = [list(xij) for xij in xi]
             xp.append(xi)
             cxp.append(cxi)
             pp.append(context)
 
             for xij in xi:
+                word_counter[xij] += len(para['qas'])
+                lower_word_counter[xij.lower()] += len(para['qas'])
                 for xijk in xij:
-                    word_counter[xijk] += len(para['qas'])
-                    lower_word_counter[xijk.lower()] += len(para['qas'])
-                    for xijkl in xijk:
-                        char_counter[xijkl] += len(para['qas'])
+                    char_counter[xijk] += len(para['qas'])
 
             rxi = [ai, pi]
             assert len(x) - 1 == ai
@@ -125,16 +121,12 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     answer_start = answer['answer_start']
                     answer_stop = answer_start + len(answer_text)
                     # TODO : put some function that gives word_start, word_stop here
-                    yi0, yi1 = get_word_span(context, xi, answer_start, answer_stop)
+                    yi0, yi1, i0, i1 = get_word_span(context, xi, answer_start, answer_stop)
                     # yi0 = answer['answer_word_start'] or [0, 0]
                     # yi1 = answer['answer_word_stop'] or [0, 1]
-                    assert len(xi[yi0[0]]) > yi0[1]
-                    assert len(xi[yi1[0]]) >= yi1[1]
-                    w0 = xi[yi0[0]][yi0[1]]
-                    w1 = xi[yi1[0]][yi1[1]-1]
-                    i0 = get_word_idx(context, xi, yi0)
-                    i1 = get_word_idx(context, xi, (yi1[0], yi1[1]-1))
-                    cyi0 = answer_start - i0 #in case the answer_start does not correspond to the beginning of a word from tokenizer
+                    w0 = xi[yi0]
+                    w1 = xi[yi1-1]
+                    cyi0 = answer_start - i0
                     cyi1 = answer_stop - i1 - 1 #in case the answer_end does not correspond to the end of a word from tokenizer
                     # print(answer_text, w0[cyi0:], w1[:cyi1+1])
                     assert answer_text[0] == w0[cyi0], (answer_text, w0, cyi0) #check if first character matches
