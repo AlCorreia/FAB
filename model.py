@@ -63,11 +63,11 @@ class Model(object):
         # 2. Lowercase letters: indicates a measure
         #    m: maximum, n: number, s: size, o: out
         self.Bs = config['model']['batch_size']
-        self.Ps = config['model']['max_par_size']
-        self.Qs = config['model']['max_ques_size']
-        self.Wm = config['model']['max_word_size']
+        #self.Ps = config['model']['max_par_size']
+        #self.Qs = config['model']['max_ques_size']
+        #self.Wm = config['model']['max_word_size']
         self.WVs = config['model']['vocabulary_size']
-        self.WEs = config['glove']['vec_size'] # Assumed to be equal to the GloVe vector size
+        self.WEs = int(config['glove']['vec_size']) # Assumed to be equal to the GloVe vector size
         # self.CVs = config['model']['char_vocabulary_size']
         # self.CEs = config['model']['char_emb_size']
         # self.Co = config['model']['char_out_size']

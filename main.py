@@ -1,6 +1,6 @@
 import argparse
 #import configparser
-from read_data import prepro_each, read_data, get_batch_idxs
+from read_data import prepro_each, read_data, get_batch_idxs, update_config
 import sys
 import json
 import os
@@ -12,8 +12,9 @@ def main(config):
         prepro_each(config=config, data_type='train',out_name='train') #to preprocess the train data
         prepro_each(config=config, data_type='dev',out_name='dev') #to preprocess  the dev data
     if config['model']['run']:
-        data_train = read_data(config,'dev',0)
-        batch_idxs=get_batch_idxs(config,data_train)
+        data = read_data(config,'train',0)
+        config = update_config(config,data) #update config with max_word_size, max_passage_size, embedded_vector
+        batch_idxs=get_batch_idxs(config,data)
         pdb.set_trace()
 if __name__ == '__main__':
 
