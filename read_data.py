@@ -237,6 +237,16 @@ def read_data(config, data_type, ref, data_filter=None):
     data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs}
     return data_set
 
+def update_config(config, data_set)
+    config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_known_words']
+    config['model']['emb_mat_unk_words'] = data_set['shared']['emb_mat_unknown_words']
+            self.Bs = config['model']['batch_size']
+        self.Ps = config['model']['max_par_size']
+        self.Qs = config['model']['max_ques_size']
+        self.Wm = config['model']['max_word_size']
+        self.WVs = config['model']['vocabulary_size']
+    return config
+
 def get_batch_idxs(config, data_set):
     # Compute number of questions
     nQuestions = len(next(iter(data_set['data'].values())))
