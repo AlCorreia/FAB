@@ -14,7 +14,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": true,
+		"run": false,
 	    "lower_word": true,
 		"finetune": false,
 		"split": true,
@@ -33,15 +33,15 @@
 		"decay_steps":1000,
 		"decay_rate":0.96,
 		"arch":[512,256,128],
-		"n_hidden": 100
+		"n_hidden": 100,
 		"nonlinearity":"tf.nn.relu",
-    "max_num_sents":5,
-    "max_sent_size":10,
-    "max_ques_size":20,
-    "max_word_size":15,
-    "vocabulary_size":200000,
-    "char_vocabulary_size":30,
-    "input_keep_prob":0.8,
-    "share_lstm_weights":true
+        "max_num_sents":5,
+        "max_sent_size":10,
+        "max_ques_size":20,
+        "max_word_size":15,
+        "vocabulary_size":200000,
+        "char_vocabulary_size":30,
+        "input_keep_prob":0.8,
+        "share_lstm_weights":true
 	}
 }

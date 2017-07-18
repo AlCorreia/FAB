@@ -7,6 +7,9 @@ import os
 import pdb
 #import tensorflow as tf
 
+from model import Model
+
+
 def main(config):
     if config['pre']['run']:
         prepro_each(config=config, data_type='train',out_name='train') #to preprocess the train data
@@ -14,8 +17,13 @@ def main(config):
     if config['model']['run']:
         data = read_data(config,'train',0)
         config = update_config(config,data) #update config with max_word_size, max_passage_size, embedded_vector
-        batch_idxs=get_batch_idxs(config,data)
-        pdb.set_trace()
+        # Create an instance of the model
+        model = Model(config)
+        # Train the model
+        for i in tqdm(range(10000)):
+            model.train(batch_idxs, data)
+
+
 if __name__ == '__main__':
 
     with open('config.json') as json_data_file:
