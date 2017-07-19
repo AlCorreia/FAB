@@ -120,10 +120,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     answers.append(answer_text)
                     answer_start = answer['answer_start']
                     answer_stop = answer_start + len(answer_text)
-                    # TODO : put some function that gives word_start, word_stop here
                     yi0, yi1, i0, i1 = get_word_span(context, xi, answer_start, answer_stop)
-                    # yi0 = answer['answer_word_start'] or [0, 0]
-                    # yi1 = answer['answer_word_stop'] or [0, 1]
                     w0 = xi[yi0]
                     w1 = xi[yi1-1]
                     cyi0 = answer_start - i0
@@ -148,7 +145,6 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 y.append(yi)
                 cy.append(cyi)
                 rx.append(rxi)
-                #rcx.append(rxi) Delete if not useful. It is the same as rx.
                 ids.append(qa['id'])
                 idxs.append(len(idxs))
                 answerss.append(answers)
@@ -162,7 +158,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
-            'idxs': idxs, 'ids': ids, 'answerss': answerss, '*p': rx}
+            'idxs': idxs, 'ids': ids, 'answerss': answerss}
     shared = {'x': x, 'cx': cx, 'p': p,
               'word_counter': word_counter, 'char_counter': char_counter, 'lower_word_counter': lower_word_counter,
               'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
@@ -180,7 +176,7 @@ def read_data(config, data_type, ref, data_filter=None):
         shared = json.load(fh)
 
     num_examples = len(next(iter(data.values()))) #number of questions
-    if data_filter is None:
+    if data_filter is None: #if there is a filter to discard some of the passages or questions
         valid_idxs = range(num_examples)
     else:
         mask = []
@@ -192,7 +188,7 @@ def read_data(config, data_type, ref, data_filter=None):
         valid_idxs = [idx for idx in range(len(mask)) if mask[idx]]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
-    if not ref:
+    if not ref: #TODO: why there is this "if"? If not useful, delete
         word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
         word_counter = shared['lower_word_counter'] if config['pre']['lower_word'] else shared['word_counter']
         char_counter = shared['char_counter']
@@ -216,7 +212,7 @@ def read_data(config, data_type, ref, data_filter=None):
         shared['char2idx'][NULL] = 0
         shared['char2idx'][UNK] = 1
         #json.dump({'unk_word2idx': shared['unk_word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w')) why to use this line?
-    else:
+    else: 
         new_shared = json.load(open(shared_path, 'r'))
         for key, val in new_shared.items():
             shared[key] = val
@@ -225,27 +221,26 @@ def read_data(config, data_type, ref, data_filter=None):
         # create word2idx for uknown and known words
         word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
         word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
+        
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
+        
         known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
         # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-        emb_mat_known_words = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
-        shared['emb_mat_known_words'] = emb_mat_known_words
-        emb_mat_unk_words = np.array([np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
+        
+        shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
+        
+        unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
+        
+        shared['emb_mat_unk_words']  = np.array([unk_idx2vec_dict[idx] if idx in unk_idx2vec_dict
+                        else np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
                         for idx in range(word_vocab_size)]) #create random vectors for new words
-        shared['emb_mat_unk_words']=emb_mat_unk_words
 
     data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs}
     return data_set
 
 def update_config(config, data_set):
-    config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_known_words'])
+    config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
     config['model']['emb_mat_unk_words'] = data_set['shared']['emb_mat_unk_words']
-        # TODO: Remove these lines. What is self here?
-        # self.Bs = config['model']['batch_size']
-        # self.Ps = config['model']['max_par_size']
-        # self.Qs = config['model']['max_ques_size']
-        # self.Wm = config['model']['max_word_size']
-        # self.WVs = config['model']['vocabulary_size']
     return config
 
 def get_batch_idxs(config, data_set):
