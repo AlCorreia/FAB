@@ -8,6 +8,7 @@ import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python.ops.rnn_cell_impl import _linear as get_logits
 from tqdm import tqdm
+import pdb
 
 from read_data import get_batch_idxs
 
@@ -121,7 +122,7 @@ class Model(object):
 
         """
         # Combine the input dictionaries for all the features models
-        feed_dict = self.get_feed_dict(batch_idxs, is_training=True)
+        feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
         # Run the training step
         summary, _ = self.sess.run([self.summary, self.train_step],
                                    feed_dict=feed_dict)
@@ -291,27 +292,57 @@ class Model(object):
     # 2. Implement it on the Dataset class and return the whole feed_dict. In
     # that case, variable names must be well defined.
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    def get_feed_dict(self, batch_idxs, is_training):
+    def get_feed_dict(self, batch_idxs, is_training, dataset):
         feed_dict = {}
-
+        x=[]
+        q=[]
+        y1=[]
+        y2=[]
+        def word2id (word): #to convert a word to its respective id
+            if self.config['pre']['lower_word']:
+                word=word.lower()
+            if word in dataset['shared']['known_word2idx']:
+                return dataset['shared']['known_word2idx'][word] + self.WVs #vocabulary size
+            elif word in dataset['shared']['unk_word2idx']:
+                return dataset['shared']['unk_word2idx'][word]
+            else:
+                return 1 #unknown word
+        
+        def padding(seq): #for padding a batch
+            max_size=max([len(seq[i]) for i in  range(len(seq))])
+            new_seq=[np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])],axis=0)  for i in range(len(seq))]
+            return np.int_(new_seq)
+                
         # TODO: Add characters
-        # TODO: Actually read the data from the json files
-        x = np.zeros([self.Bs, self.Sn, self.Ss], dtype='int32')
-        # cx = np.zeros([self.Bs, self.Sn, self.Ss, self.Ws], dtype='int32')
-        x_mask = np.zeros([self.Bs, self.Sn, self.Ss], dtype='bool')
-        q = np.zeros([self.Bs, self.Qs], dtype='int32')
+         #convert every word to its respective id
+        for i in batch_idxs:
+            qi = list(map(
+                word2id,
+                dataset['data']['q'][i]))
+            rxi = dataset['data']['*x'][i]
+            yi = dataset['data']['y'][i]
+            xi = list(map(word2id, 
+                dataset['shared']['x'][rxi[0]][rxi[1]]))
+            q.append(qi)
+            x.append(xi)
+            y1.append(yi[0])
+            y2.append(yi[1])
+            
+        
+        #padding
+        q = padding(q)
+        x = padding(x)
+            
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
-        q_mask = np.zeros([self.Bs, self.Qs], dtype='bool')
-
         feed_dict[self.x] = x
-        feed_dict[self.x_mask] = x_mask
         # feed_dict[self.cx] = cx
         feed_dict[self.q] = q
         # feed_dict[self.cq] = cq
-        feed_dict[self.q_mask] = q_mask
+        feed_dict[self.y] = y1
+        feed_dict[self.y2] = y2
         feed_dict[self.is_training] = is_training
         if config.use_glove_for_unk:
-            feed_dict[self.new_emb_mat] = batch.shared['new_emb_mat']
+            feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
 
         return feed_dict
 
