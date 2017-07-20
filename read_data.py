@@ -240,7 +240,7 @@ def read_data(config, data_type, ref, data_filter=None):
 
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
-    config['model']['emb_mat_unk_words'] = data_set['shared']['emb_mat_unk_words']
+    config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype = np.float32)
     return config
 
 def get_batch_idxs(config, data_set):
