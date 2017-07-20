@@ -68,7 +68,7 @@ class Model(object):
         self.y = tf.placeholder('bool', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('bool', [self.Bs, None], name='y2')
         self.is_train = tf.placeholder('bool', [], name='is_train')
-        self.new_emb_mat = tf.placeholder('float', [None, self.WEs], name='new_emb_mat')
+        self.new_emb_mat = tf.placeholder(tf.float32, [None, self.WEs], name='new_emb_mat')
 
         #Masks
         self.x_mask = tf.sign(self.x)
@@ -143,15 +143,14 @@ class Model(object):
             # TODO: Save the embedding matrix somewhere other than the config file
             if config['model']['is_training']:
                 word_emb_mat = tf.get_variable("word_emb_mat",
-                                               dtype='float',
-                                               shape=[self.WVs, self.WEs],
-                                               initializer=get_initializer(config.emb_mat))
+                                               dtype=tf.float32,
+                                               initializer = config['model']['emb_mat_unk_words']) #[self.WVs, self.WEs]
             else:
                 word_emb_mat = tf.get_variable("word_emb_mat",
                                                shape=[self.WVs, self.WEs],
-                                               dtype='float')
-            if config.use_glove_for_unk:
-                word_emb_mat = tf.concat(0, [word_emb_mat, self.new_emb_mat])
+                                               dtype=tf.float32)
+            if config['pre']['use_glove_for_unk']:
+                word_emb_mat_full = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
 
             with tf.name_scope("word"):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
@@ -160,8 +159,11 @@ class Model(object):
                 self.tensor_dict['q'] = Aq
 
         # Build the LSTM cell with dropout
-        cell = BasicLSTMCell(self.n_hidden, state_is_tuple=True)
-        d_cell = SwitchableDropoutWrapper(cell, self.is_training, input_keep_prob=config.input_keep_prob)
+        cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+        dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = config['model']['input_keep_prob'])
+        if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
+            dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
+
         # Calculate the number of used values in the each matrix
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 1)  # [Bs]
         q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [Bs]
@@ -169,23 +171,23 @@ class Model(object):
         with tf.variable_scope("prepro"):
             # [Bs, Qs, 2Hn], [Bs, Hn]
             (fw_u, bw_u), ((_, fw_u_f), (_, bw_u_f)) = \
-                tf.nn.bidirectional_dynamic_rnn(cell_fw=d_cell,
-                                                cell_bw=d_cell,
+                tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell,
+                                                cell_bw=dropout_cell,
                                                 inputs=Aq,
                                                 sequence_length=q_len,
                                                 dtype='float',
                                                 scope='u1')
-            u = tf.concat(2, [fw_u, bw_u])
-            if config['model']['share_lstm_weights']:
+            u = tf.concat([fw_u, bw_u], axis = 2)
+            if config['model']['share_lstm_weights']: 
                 tf.get_variable_scope().reuse_variables()
-                # [Bs, Ps, 2Hn]
+                # [Bs, Ps, 2Hn] Why without dropout?
                 (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
                                                                   cell_bw=cell,
                                                                   inputs=Ax,
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='u1')
-                h = tf.concat(3, [fw_h, bw_h])  # [Bs, Sn, Ss, 2Hn]
+                h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
             else:
                 # [Bs, Ps, 2Hn]
                 (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
@@ -194,37 +196,32 @@ class Model(object):
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='h1')
-                h = tf.concat(3, [fw_h, bw_h])  # [Bs, Ps, 2Hn]
+                h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
             self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
 
         with tf.variable_scope("main"):
-
 			#AttentionLayer
-
-            # TODO: Implement attention model
-            p0 =  attention_layer(x,q, h,u,scope='p0') #[Bs, Ps, 8Hn]
-            first_cell = tf.reshape(tf.tile(tf.expand_dims(u, 1),
-                                            [1, Sn, 1, 1]),
-                                    [self.Bs * self.Sn, self.Qs, 2 * self.Hn])
-
-            # [Bs, Sn, Ss, 2Hn]
-            (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=first_cell,
-                                                                cell_bw=first_cell,
+            p0 =  attention_layer(self.x, self.q, Ax, Aq, x_len, q_len, self.Hn*2, self.Bs, h, u, scope='p0') #[Bs, Ps, 8Hn] 
+            #Hidden size multiplied by two because of bidirectional layer
+     
+            # [Bs, Ps, 8Hn]
+            (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell,
+                                                                cell_bw=dropout_cell,
                                                                 inputs=p0,
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g0')
-            g0 = tf.concat(3, [fw_g0, bw_g0])
+            g0 = tf.concat([fw_g0, bw_g0], axis = 2)
 
-            # [Bs, Sn, Ss, 2Hn]
-            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=first_cell,
-                                                                cell_bw=first_cell,
+            # [Bs, Ps, 8Hn]
+            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout,
+                                                                cell_bw=dropout_cell,
                                                                 inputs=g0,
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g1')
-            g1 = tf.concat(3, [fw_g1, bw_g1])
+            g1 = tf.concat([fw_g1, bw_g1], axis = 2)
 
             # TODO: Rewrite the get_logits function
             logits = get_logits(args=[g1, p0],
@@ -239,11 +236,11 @@ class Model(object):
             # [Bs, Sn, Ss, 2Hn]
             (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=d_cell,
                                                                 cell_bw=d_cell,
-                                                                inputs=tf.concat(3, [p0, g1, a1i, g1 * a1i]),
+                                                                inputs=tf.concat([p0, g1, a1i, g1 * a1i], axis = 3),
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g2')
-            g2 = tf.concat(3, [fw_g2, bw_g2])
+            g2 = tf.concat([fw_g2, bw_g2], axis = 3)
             # TODO: Rewrite the get_logits function
             logits2 = get_logits(args=[g2, p0],
                                  output_size=1,
@@ -341,19 +338,19 @@ class Model(object):
         feed_dict[self.y] = y1
         feed_dict[self.y2] = y2
         feed_dict[self.is_training] = is_training
-        if config.use_glove_for_unk:
+        if config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
 
         return feed_dict
 
 
-def attention_layer(x, q, h, u, scope=None):
+def attention_layer(x, q, x_embed, q_embed, x_len, q_len, hidden_size, batch_size, h, u, scope=None):
     """
         Define attention mechanism between vectors h (question) and u (paragraph):
              att(m,n)  = vec1 . h_m + vec2 . u_n + (vec3 * h_m) . u_n
         where '.' is the dot product and '*' the elementwise product
     """
-    mask_matrix=tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x_q,-1),transpose_b=True))
+    mask_matrix=tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(q,-1),transpose_b=True))
     with tf.variable_scope(scope):
         vec1_att = tf.get_variable("att1",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
         vec2_att = tf.get_variable("att2",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
@@ -387,15 +384,15 @@ def attention_layer(x, q, h, u, scope=None):
 
     att_1_Product = tf.tile(
         att_1_Product,
-        [1,tf.reduce_max(length(x_q_input)),1]) #[Bs, Qs, Ps]
+        [1,tf.reduce_max(q_len),1]) #[Bs, Qs, Ps]
 
     att_2_Product = tf.tile(
         att_2_Product,
-        [1,1,tf.reduce_max(length(x_input))]) #[Bs, Qs, Ps]
+        [1,1,tf.reduce_max(x_len)]) #[Bs, Qs, Ps]
 
     #  of (vec3 * h)  . u
 
-    h_vectorized = tf.multiply(h,att_3_vec) #vect 3 * h
+    h_vectorized = tf.multiply(h,vec3_att) #vect 3 * h
     att_3_Product = tf.matmul(u,h_vectorized,transpose_b=True) # ((vec 3 * h) . u [Bs, Qs, Ps]
     att_final=tf.transpose(
         att_1_Product+att_2_Product+att_3_Product,
@@ -418,7 +415,7 @@ def attention_layer(x, q, h, u, scope=None):
 	    tf.matmul(
             tf.expand_dims(q2p,1),
             h),
-	    [1,tf.reduce_max(length(x_input)),1]
+	    [1,tf.reduce_max(x_len),1]
     )
 
     G = tf.concat([h,U_a,tf.multiply(h,U_a),tf.multiply(h,H_a)],axis=-1)
