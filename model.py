@@ -6,7 +6,6 @@ import pandas as pd
 import random
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
-from tensorflow.python.ops.rnn_cell_impl import _linear as get_logits
 from tqdm import tqdm
 import pdb
 
@@ -103,20 +102,22 @@ class Model(object):
         # if config.mode == 'train':
         #     self._build_ema()
 
-        self.summary = tf.merge_all_summaries()
-        self.summary = tf.merge_summary(tf.get_collection("summaries", scope=self.scope))
+        self.summary = tf.summary.merge_all()
+        #Delte if not useful:
+        #self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
+        
+         # Define a session for the model
+        self.sess = tf.Session()
         # Add a writer object to log the models's progress in the "train" folder
         self.writer = tf.summary.FileWriter(self.directory + '/train',
                                             self.sess.graph)
 
-        # Define a session for the model
-        self.sess = tf.Session()
 
     def train(self, batch_idxs, dataset):
         """ Runs a train step given the input X and the correct label y.
 
             Parameters
-            ----------
+          d  ----------
             batch_idxs : list of the idxs of each example
             dataset : the correspondent json file
 
@@ -124,6 +125,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
         # Run the training step
+        self.sess.run(tf.global_variables_initializer())
         summary, _ = self.sess.run([self.summary, self.train_step],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
@@ -150,7 +152,7 @@ class Model(object):
                                                shape=[self.WVs, self.WEs],
                                                dtype=tf.float32)
             if config['pre']['use_glove_for_unk']:
-                word_emb_mat_full = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
+                word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
 
             with tf.name_scope("word"):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
@@ -161,8 +163,8 @@ class Model(object):
         # Build the LSTM cell with dropout
         cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
         dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = config['model']['input_keep_prob'])
-        if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
-            dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
+        #if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
+            #dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
 
         # Calculate the number of used values in the each matrix
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 1)  # [Bs]
@@ -206,58 +208,67 @@ class Model(object):
             #Hidden size multiplied by two because of bidirectional layer
      
             # [Bs, Ps, 8Hn]
-            (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell,
-                                                                cell_bw=dropout_cell,
+            cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(cell_after_att, input_keep_prob = config['model']['input_keep_prob'])
+            (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att,
+                                                                cell_bw=dropout_cell_after_att,
                                                                 inputs=p0,
                                                                 sequence_length=x_len,
-                                                                dtype='float',
+                                                                dtype=tf.float32,
                                                                 scope='g0')
             g0 = tf.concat([fw_g0, bw_g0], axis = 2)
 
             # [Bs, Ps, 8Hn]
-            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout,
-                                                                cell_bw=dropout_cell,
+            cell_after_att_2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(cell_after_att_2, input_keep_prob = config['model']['input_keep_prob'])
+            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att_2,
+                                                                cell_bw=dropout_cell_after_att_2,
                                                                 inputs=g0,
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g1')
-            g1 = tf.concat([fw_g1, bw_g1], axis = 2)
+            
+            g1 = tf.concat([fw_g1, bw_g1, p0], axis = 2)
 
-            # TODO: Rewrite the get_logits function
-            logits = get_logits(args=[g1, p0],
-                                output_size=1,
-                                bias=True)
-            # TODO: Rewrite the softsel function
-            a1i = softsel(tf.reshape(g1, [self.Bs, self.Sn * self.Ss, 2 * self.Hn]),
-                          tf.reshape(logits, [self.Bs, self.Sn * self.Ss]))
-            a1i = tf.tile(tf.expand_dims(tf.expand_dims(a1i, 1), 1),
-                          [1, self.Sn, self.Ss, 1])
+            w_y1 = tf.get_variable('w_y1', shape = [10*self.Hn,1], dtype = tf.float32)
+            logits_y1 = tf.reshape(
+                tf.matmul(
+                    tf.concat(tf.unstack(value=g1,axis=0),axis=0),
+                    w_y1),
+            [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask,tf.float32),VERY_LOW_NUMBER) #mask
+            smax = tf.nn.softmax(logits_y1, 1)
+            a1i = tf.matmul(tf.expand_dims(smax, 1), 
+				g1) #softsel
+            
+            a1i = tf.tile(a1i,
+                          [1, self.Ps, 1]) 
 
             # [Bs, Sn, Ss, 2Hn]
-            (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=d_cell,
-                                                                cell_bw=d_cell,
-                                                                inputs=tf.concat([p0, g1, a1i, g1 * a1i], axis = 3),
+            cell_y2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            dropout_cell_y2 = tf.contrib.rnn.DropoutWrapper(cell_y2, input_keep_prob = config['model']['input_keep_prob'])
+            (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw = dropout_cell_y2,
+                                                                cell_bw=dropout_cell_y2,
+                                                                inputs = tf.concat([p0, g1,a1i, tf.multiply(g1, a1i)], axis = 2),
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g2')
-            g2 = tf.concat([fw_g2, bw_g2], axis = 3)
+            g2 = tf.concat([fw_g2, bw_g2], axis = 2)
             # TODO: Rewrite the get_logits function
-            logits2 = get_logits(args=[g2, p0],
-                                 output_size=1,
-                                 bias=True)
+            w_y2 = tf.get_variable('w_y2', shape = [2*self.Hn,1], dtype = tf.float32)
+            logits_y2 = tf.reshape(
+                tf.matmul(
+                    tf.concat(tf.unstack(value=g1,axis=0),axis=0),
+                    w_y1),
+            [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask, tf.float32), VERY_LOW_NUMBER) #mask
 
-            flat_logits = tf.reshape(logits, [-1, M * JX])
-            flat_yp = tf.nn.softmax(flat_logits)  # [-1, Sn * Ss]
-            yp = tf.reshape(flat_yp, [-1, M, JX])
-            flat_logits2 = tf.reshape(logits2, [-1, M * JX])
-            flat_yp2 = tf.nn.softmax(flat_logits2)
-            yp2 = tf.reshape(flat_yp2, [-1, M, JX])
+            yp = smax # [Bs, Ps]
+            yp2 = tf.nn.softmax(logits_y2) #[Bs,Ps]
 
             self.tensor_dict['g1'] = g1
             self.tensor_dict['g2'] = g2
 
-            self.logits = flat_logits
-            self.logits2 = flat_logits2
+            self.logits_y1 = logits_y1
+            self.logits_y2 = logits_y2
             self.yp = yp
             self.yp2 = yp2
 
@@ -266,18 +277,19 @@ class Model(object):
             Defines the model's loss function.
 
         """
-        loss_mask = tf.reduce_max(tf.cast(self.q_mask, 'float'), 1)
+		#TODO: add collections if useful. Otherwise delete them.
         losses = tf.nn.softmax_cross_entropy_with_logits(
-            self.logits, tf.cast(tf.reshape(self.y, [-1, self.Sn * self.Ss]), 'float'))
-        ce_loss = tf.reduce_mean(loss_mask * losses)
-        tf.add_to_collection('losses', ce_loss)
+            logits = self.logits_y1, labels = tf.cast(self.y, 'float'))
+        ce_loss = tf.reduce_mean(losses)
+        #tf.add_to_collection('losses', ce_loss)
         ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-            self.logits2, tf.cast(tf.reshape(self.y2, [-1, self.Sn * self.Ss]), 'float')))
-        tf.add_to_collection("losses", ce_loss2)
+            logits = self.logits_y2, labels = tf.cast(self.y2, 'float')))
+		#tf.add_to_collection("losses", ce_loss2)
 
-        self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
-        tf.scalar_summary(self.loss.op.name, self.loss)
-        tf.add_to_collection('ema/scalar', self.loss)
+        #self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
+        self.loss = tf.add_n([ce_loss, ce_loss2])
+        tf.summary.scalar(self.loss.op.name, self.loss)
+        #tf.add_to_collection('ema/scalar', self.loss)
 
     # TODO: Better define this function.
     # Don't know whether it's better to implement it on the model or on in the
@@ -329,16 +341,21 @@ class Model(object):
         #padding
         q = padding(q)
         x = padding(x)
+        y1_new=np.zeros([self.Bs,len(next(iter(x)))], dtype = np.bool)
+        y2_new=np.zeros([self.Bs,len(next(iter(x)))], dtype = np.bool)
+        for i in range(self.Bs):
+            y1_new[i][y1[i]]=True
+            y2_new[i][y2[i]]=True
             
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
         # feed_dict[self.cx] = cx
         feed_dict[self.q] = q
         # feed_dict[self.cq] = cq
-        feed_dict[self.y] = y1
-        feed_dict[self.y2] = y2
+        feed_dict[self.y] = y1_new
+        feed_dict[self.y2] = y2_new
         feed_dict[self.is_training] = is_training
-        if config['pre']['use_glove_for_unk']:
+        if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
 
         return feed_dict
@@ -420,17 +437,3 @@ def attention_layer(x, q, x_embed, q_embed, x_len, q_len, hidden_size, batch_siz
 
     G = tf.concat([h,U_a,tf.multiply(h,U_a),tf.multiply(h,H_a)],axis=-1)
     return G
-
-def softsel(target, logits, mask=None, scope=None):
-    """
-    :param target: [ ..., J, d] dtype=float
-    :param logits: [ ..., J], dtype=float
-    :param mask: [ ..., J], dtype=bool
-    :param scope:
-    :return: [..., d], dtype=float
-    """
-    with tf.name_scope(scope or "Softsel"):
-        a = softmax(logits, mask=mask)
-        target_rank = len(target.get_shape().as_list())
-        out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
-        return out
