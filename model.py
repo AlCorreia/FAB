@@ -234,9 +234,9 @@ class Model(object):
             w_y1 = tf.get_variable('w_y1', shape = [10*self.Hn,1], dtype = tf.float32)
             logits_y1 = tf.reshape(
                 tf.matmul(
-                    tf.concat(tf.unstack(value=g1,axis=0),axis=0),
+                    tf.concat(tf.unstack(value=g1, axis=0), axis=0),
                     w_y1),
-            [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask,tf.float32),VERY_LOW_NUMBER) #mask
+            [self.Bs, -1]) + tf.multiply(tf.cast(1 - self.x_mask,tf.float32), VERY_LOW_NUMBER) #mask
             smax = tf.nn.softmax(logits_y1, 1)
             a1i = tf.matmul(tf.expand_dims(smax, 1),
 				g1) #softsel
@@ -278,19 +278,19 @@ class Model(object):
             Defines the model's loss function.
 
         """
-		#TODO: add collections if useful. Otherwise delete them.
+		# TODO: add collections if useful. Otherwise delete them.
         losses = tf.nn.softmax_cross_entropy_with_logits(
             logits = self.logits_y1, labels = tf.cast(self.y, 'float'))
         ce_loss = tf.reduce_mean(losses)
-        #tf.add_to_collection('losses', ce_loss)
+        # tf.add_to_collection('losses', ce_loss)
         ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits = self.logits_y2, labels = tf.cast(self.y2, 'float')))
-		#tf.add_to_collection("losses", ce_loss2)
+		# tf.add_to_collection("losses", ce_loss2)
 
-        #self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
+        # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
         self.loss = tf.add_n([ce_loss, ce_loss2])
         tf.summary.scalar('loss', self.loss)
-        #tf.add_to_collection('ema/scalar', self.loss)
+        # tf.add_to_collection('ema/scalar', self.loss)
 
     # TODO: Better define this function.
     # Don't know whether it's better to implement it on the model or on in the
@@ -324,7 +324,7 @@ class Model(object):
             return np.int_(new_seq)
 
         # TODO: Add characters
-         #convert every word to its respective id
+        # convert every word to its respective id
         for i in batch_idxs:
             qi = list(map(
                 word2id,
@@ -335,18 +335,18 @@ class Model(object):
                 dataset['shared']['x'][rxi[0]][rxi[1]]))
             q.append(qi)
             x.append(xi)
-            y1.append(yi[0])
-            y2.append(yi[1])
-
+            y1.append([y[0] for y in yi]) # Get all the first indices in the sequence
+            y2.append([y[1]-1 for y in yi]) # Get all the second indices... and correct for -1
 
         #padding
         q = padding(q)
         x = padding(x)
-        y1_new=np.zeros([self.Bs,len(next(iter(x)))], dtype = np.bool)
-        y2_new=np.zeros([self.Bs,len(next(iter(x)))], dtype = np.bool)
+        y1_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
+        y2_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
         for i in range(self.Bs):
             y1_new[i][y1[i]]=True
             y2_new[i][y2[i]]=True
+
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
