@@ -103,11 +103,13 @@ class Model(object):
         #     self._build_ema()
 
         self.summary = tf.summary.merge_all()
-        #Delte if not useful:
-        #self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
-        
-         # Define a session for the model
+        # Delete if not useful:
+        # self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
+
+        # Define a session for the model
         self.sess = tf.Session()
+        # Initialize all variables
+        self.sess.run(tf.global_variables_initializer())
         # Add a writer object to log the models's progress in the "train" folder
         self.writer = tf.summary.FileWriter(self.directory + '/train',
                                             self.sess.graph)
@@ -124,8 +126,7 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
-        # Run the training step
-        self.sess.run(tf.global_variables_initializer())
+
         summary, _ = self.sess.run([self.summary, self.train_step],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
@@ -180,7 +181,7 @@ class Model(object):
                                                 dtype='float',
                                                 scope='u1')
             u = tf.concat([fw_u, bw_u], axis = 2)
-            if config['model']['share_lstm_weights']: 
+            if config['model']['share_lstm_weights']:
                 tf.get_variable_scope().reuse_variables()
                 # [Bs, Ps, 2Hn] Why without dropout?
                 (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
@@ -204,9 +205,9 @@ class Model(object):
 
         with tf.variable_scope("main"):
 			#AttentionLayer
-            p0 =  attention_layer(self.x, self.q, Ax, Aq, x_len, q_len, self.Hn*2, self.Bs, h, u, scope='p0') #[Bs, Ps, 8Hn] 
+            p0 =  attention_layer(self.x, self.q, Ax, Aq, x_len, q_len, self.Hn*2, self.Bs, h, u, scope='p0') #[Bs, Ps, 8Hn]
             #Hidden size multiplied by two because of bidirectional layer
-     
+
             # [Bs, Ps, 8Hn]
             cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
             dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(cell_after_att, input_keep_prob = config['model']['input_keep_prob'])
@@ -227,7 +228,7 @@ class Model(object):
                                                                 sequence_length=x_len,
                                                                 dtype='float',
                                                                 scope='g1')
-            
+
             g1 = tf.concat([fw_g1, bw_g1, p0], axis = 2)
 
             w_y1 = tf.get_variable('w_y1', shape = [10*self.Hn,1], dtype = tf.float32)
@@ -237,11 +238,11 @@ class Model(object):
                     w_y1),
             [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask,tf.float32),VERY_LOW_NUMBER) #mask
             smax = tf.nn.softmax(logits_y1, 1)
-            a1i = tf.matmul(tf.expand_dims(smax, 1), 
+            a1i = tf.matmul(tf.expand_dims(smax, 1),
 				g1) #softsel
-            
+
             a1i = tf.tile(a1i,
-                          [1, self.Ps, 1]) 
+                          [1, self.Ps, 1])
 
             # [Bs, Sn, Ss, 2Hn]
             cell_y2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
@@ -288,7 +289,7 @@ class Model(object):
 
         #self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
         self.loss = tf.add_n([ce_loss, ce_loss2])
-        tf.summary.scalar(self.loss.op.name, self.loss)
+        tf.summary.scalar('loss', self.loss)
         #tf.add_to_collection('ema/scalar', self.loss)
 
     # TODO: Better define this function.
@@ -316,12 +317,12 @@ class Model(object):
                 return dataset['shared']['unk_word2idx'][word]
             else:
                 return 1 #unknown word
-        
+
         def padding(seq): #for padding a batch
             max_size=max([len(seq[i]) for i in  range(len(seq))])
             new_seq=[np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])],axis=0)  for i in range(len(seq))]
             return np.int_(new_seq)
-                
+
         # TODO: Add characters
          #convert every word to its respective id
         for i in batch_idxs:
@@ -330,14 +331,14 @@ class Model(object):
                 dataset['data']['q'][i]))
             rxi = dataset['data']['*x'][i]
             yi = dataset['data']['y'][i]
-            xi = list(map(word2id, 
+            xi = list(map(word2id,
                 dataset['shared']['x'][rxi[0]][rxi[1]]))
             q.append(qi)
             x.append(xi)
             y1.append(yi[0])
             y2.append(yi[1])
-            
-        
+
+
         #padding
         q = padding(q)
         x = padding(x)
@@ -346,7 +347,7 @@ class Model(object):
         for i in range(self.Bs):
             y1_new[i][y1[i]]=True
             y2_new[i][y2[i]]=True
-            
+
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
         # feed_dict[self.cx] = cx
