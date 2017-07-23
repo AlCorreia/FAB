@@ -108,6 +108,8 @@ class Model(object):
 
         # Define a session for the model
         self.sess = tf.Session()
+        # Add ops to save and restore all the variables.
+        self.saver = tf.train.Saver()
         # Initialize all variables
         self.sess.run(tf.global_variables_initializer())
         # Add a writer object to log the models's progress in the "train" folder
