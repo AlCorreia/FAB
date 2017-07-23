@@ -93,8 +93,13 @@ class Model(object):
 
         # Define optimizer and train step
         # TODO: We could add the optimizer option to the config file. ADAM for now.
-        self.optimizer = tf.train.AdamOptimizer()
-        self.train_step = self.optimizer.minimize(self.loss, global_step=self.global_step)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+
+        # Using contrib.layers to automatically log the gradients
+        self.train_step = tf.contrib.layers.optimize_loss(
+            self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
+            summaries=["gradients"], name='TIBINO')
+
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
         # if rep:
@@ -149,7 +154,7 @@ class Model(object):
             if config['model']['is_training']:
                 word_emb_mat = tf.get_variable("word_emb_mat",
                                                dtype=tf.float32,
-                                               initializer = config['model']['emb_mat_unk_words']) #[self.WVs, self.WEs]
+                                               initializer = config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
             else:
                 word_emb_mat = tf.get_variable("word_emb_mat",
                                                shape=[self.WVs, self.WEs],
@@ -208,7 +213,7 @@ class Model(object):
         with tf.variable_scope("main"):
 			#AttentionLayer
             p0 =  attention_layer(self.x, self.q, Ax, Aq, x_len, q_len, self.Hn*2, self.Bs, h, u, scope='p0') #[Bs, Ps, 8Hn]
-            #Hidden size multiplied by two because of bidirectional layer
+            # Hidden size multiplied by two because of bidirectional layer
 
             # [Bs, Ps, 8Hn]
             cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
@@ -291,6 +296,8 @@ class Model(object):
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
         self.loss = tf.add_n([ce_loss, ce_loss2])
+        tf.summary.scalar('ce_loss', ce_loss)
+        tf.summary.scalar('ce_loss2', ce_loss2)
         tf.summary.scalar('loss', self.loss)
         # tf.add_to_collection('ema/scalar', self.loss)
 
@@ -370,73 +377,73 @@ def attention_layer(x, q, x_embed, q_embed, x_len, q_len, hidden_size, batch_siz
              att(m,n)  = vec1 . h_m + vec2 . u_n + (vec3 * h_m) . u_n
         where '.' is the dot product and '*' the elementwise product
     """
-    mask_matrix=tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(q,-1),transpose_b=True))
+    mask_matrix=tf.sign(tf.matmul(tf.expand_dims(x, -1), tf.expand_dims(q, -1), transpose_b=True))
     with tf.variable_scope(scope):
-        vec1_att = tf.get_variable("att1",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
-        vec2_att = tf.get_variable("att2",dtype='float',shape=[hidden_size,1]) #[Hs, 1]
-        vec3_att = tf.get_variable("att3",dtype='float',shape=[hidden_size]) #[Hs, 1]
+        vec1_att = tf.get_variable("att1",dtype='float', shape=[hidden_size, 1]) # [Hs, 1]
+        vec2_att = tf.get_variable("att2",dtype='float', shape=[hidden_size, 1]) # [Hs, 1]
+        vec3_att = tf.get_variable("att3",dtype='float', shape=[hidden_size]) # [Hs]
 
-    #shaping all the vectors into a matrix to compute attention values in one matrix multiplication
-    shaped_h=tf.concat(
+    # shaping all the vectors into a matrix to compute attention values in one matrix multiplication
+    shaped_h = tf.concat(
         tf.unstack(
             value=h,
             axis=0),
-        axis=0) #[Hs, Ps * Bs]
+        axis=0) # [Hs, Ps * Bs]
 
     shaped_u = tf.concat(
         tf.unstack(
             value=u,
             axis=0),
-        axis=0) #[Hs, Qs * Bs]
+        axis=0) # [Hs, Qs * Bs]
 
-    #computation of vec1 * h + vec2 * u
+    # Computation of vec1 * h + vec2 * u
     att_1_Product = tf.reshape(
         tf.matmul(
             shaped_h,
             vec1_att),
-        shape=[batch_size,1,-1]) # [Bs, 1, Ps]
+        shape=[batch_size, 1, -1]) # [Bs, 1, Ps]
 
     att_2_Product = tf.reshape(
         tf.matmul(
             shaped_u,
             vec2_att),
-        shape=[batch_size,-1,1]) # [Bs, Qs, 1]
+        shape=[batch_size, -1, 1]) # [Bs, Qs, 1]
 
     att_1_Product = tf.tile(
         att_1_Product,
-        [1,tf.reduce_max(q_len),1]) #[Bs, Qs, Ps]
+        [1, tf.reduce_max(q_len), 1]) # [Bs, Qs, Ps]
 
     att_2_Product = tf.tile(
         att_2_Product,
-        [1,1,tf.reduce_max(x_len)]) #[Bs, Qs, Ps]
+        [1, 1, tf.reduce_max(x_len)]) # [Bs, Qs, Ps]
 
     #  of (vec3 * h)  . u
 
-    h_vectorized = tf.multiply(h,vec3_att) #vect 3 * h
-    att_3_Product = tf.matmul(u,h_vectorized,transpose_b=True) # ((vec 3 * h) . u [Bs, Qs, Ps]
+    h_vectorized = tf.multiply(h, vec3_att) # vect 3 * h
+    att_3_Product = tf.matmul(u, h_vectorized, transpose_b=True) # ((vec 3 * h) . u [Bs, Qs, Ps]
     att_final=tf.transpose(
-        att_1_Product+att_2_Product+att_3_Product,
-        perm=[0,2,1]) #[Bs, Ps, Qs]
+        att_1_Product + att_2_Product + att_3_Product,
+        perm=[0, 2, 1]) # [Bs, Ps, Qs]
 
-    att_final_masked = att_final + tf.multiply(tf.cast(1 - mask_matrix, tf.float32), -3e15) #masking
+    att_final_masked = att_final + tf.multiply(tf.cast(1 - mask_matrix, tf.float32), -3e15) # masking
 
     # paragraph to question attention
     p2q = tf.multiply(
-        tf.nn.softmax(logits=att_final_masked,dim=-1),
+        tf.nn.softmax(logits=att_final_masked),
         tf.cast(mask_matrix,'float')
     ) # computing logits, taking into account mask
 
-    U_a=tf.matmul(p2q,u)
+    U_a = tf.matmul(p2q, u)
 
     q2p = tf.nn.softmax(
-        tf.reduce_max(att_final_masked,axis=-1))
+        tf.reduce_max(att_final_masked, axis=-1))
 
     H_a = tf.tile(
 	    tf.matmul(
-            tf.expand_dims(q2p,1),
+            tf.expand_dims(q2p, 1),
             h),
-	    [1,tf.reduce_max(x_len),1]
+	    [1, tf.reduce_max(x_len), 1]
     )
 
-    G = tf.concat([h,U_a,tf.multiply(h,U_a),tf.multiply(h,H_a)],axis=-1)
+    G = tf.concat([h, U_a, tf.multiply(h, U_a), tf.multiply(h, H_a)], axis=-1)
     return G
