@@ -134,12 +134,12 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
 
-        summary, _ = self.sess.run([self.summary, self.train_step],
+        summary, _, loss_val, global_step = self.sess.run([self.summary, self.train_step, self.loss,self.global_step],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
         self.writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
-        if self.sess.run(self.global_step) % 1000 == 0:
+        if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
 
     def _build_forward(self):
@@ -346,6 +346,7 @@ class Model(object):
             x.append(xi)
             y1.append([y[0] for y in yi]) # Get all the first indices in the sequence
             y2.append([y[1]-1 for y in yi]) # Get all the second indices... and correct for -1
+        
 
         #padding
         q = padding(q)
