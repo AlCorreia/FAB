@@ -139,6 +139,7 @@ class Model(object):
         # Write the results to Tensorboard
         self.writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
+        print(loss_val)
         if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
 
@@ -265,7 +266,7 @@ class Model(object):
             w_y2 = tf.get_variable('w_y2', shape = [2*self.Hn,1], dtype = tf.float32)
             logits_y2 = tf.reshape(
                 tf.matmul(
-                    tf.concat(tf.unstack(value=g1,axis=0),axis=0),
+                    tf.concat(tf.unstack(value=g2,axis=0),axis=0),
                     w_y1),
             [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask, tf.float32), VERY_LOW_NUMBER) #mask
 
