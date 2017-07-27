@@ -23,4 +23,9 @@ unzip $GLOVE_DIR/glove.6B.zip -d $GLOVE_DIR
 
 # Download NLTK (for tokenizer)
 # Make sure that nltk is installed!
-python3 -m nltk.downloader -d $HOME/nltk_data punkt
+export PATH_TO_NLTK_DATA=$HOME/nltk_data/
+wget https://github.com/nltk/nltk_data/archive/gh-pages.zip
+unzip gh-pages.zip
+mv nltk_data-gh-pages $PATH_TO_NLTK_DATA
+# add below code
+mv $PATH_TO_NLTK_DATA/nltk_data-gh-pages/packages/* $PATH_TO_NLTK_DATA/
