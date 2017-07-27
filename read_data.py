@@ -133,13 +133,11 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
                     yi.append([yi0, yi1])
                     cyi.append([cyi0, cyi1])
-
                 for qij in qi:
                     word_counter[qij] += 1
                     lower_word_counter[qij.lower()] += 1
                     for qijk in qij:
                         char_counter[qijk] += 1
-
                 q.append(qi)
                 cq.append(cqi)
                 y.append(yi)
@@ -174,7 +172,7 @@ def read_data(config, data_type, ref, data_filter=None):
         data = json.load(fh)
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
-
+        
     num_examples = len(next(iter(data.values()))) #number of questions
     if data_filter is None: #if there is a filter to discard some of the passages or questions
         valid_idxs = range(num_examples)

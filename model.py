@@ -267,7 +267,7 @@ class Model(object):
             logits_y2 = tf.reshape(
                 tf.matmul(
                     tf.concat(tf.unstack(value=g2,axis=0),axis=0),
-                    w_y1),
+                    w_y2),
             [self.Bs,-1]) + tf.multiply(tf.cast(1-self.x_mask, tf.float32), VERY_LOW_NUMBER) #mask
 
             yp = smax # [Bs, Ps]
