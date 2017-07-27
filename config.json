@@ -17,9 +17,12 @@
 		"run": false,
 	    "lower_word": true,
 		"finetune": false,
+        "data_filter": true,
 		"split": true,
 	    "word_count_th": 10,
 		"char_count_th": 50,
+		"max_question_size": 60,
+		"max_paragraph_size": 400,
 		"known_if_glove": true,
 		"use_glove_for_unk": true
 	},
