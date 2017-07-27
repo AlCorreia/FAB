@@ -61,18 +61,20 @@ class Model(object):
         self.is_training = tf.placeholder(tf.bool, name='is_training')
         self.x = tf.placeholder('int32', [self.Bs, None], name='x') #number of batches and number of words
         # self.cx = tf.placeholder('int32', [self.Bs, None, None, W], name='cx')
-        self.x_mask = tf.placeholder('bool', [self.Bs, None], name='x_mask')
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
         # self.cq = tf.placeholder('int32', [self.Bs, None, W], name='cq')
         self.y = tf.placeholder('bool', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('bool', [self.Bs, None], name='y2')
         self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder(tf.float32, [None, self.WEs], name='new_emb_mat')
-
+        
         #Masks
         self.x_mask = tf.sign(self.x)
         self.q_mask = tf.sign(self.q)
-
+        
+        self.max_size_x = tf.shape(self.x)
+        self.max_size_q = tf.shape(self.q)
+        
         # Redefine some parameters based on the actual tensor dimensions
         self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
@@ -134,12 +136,12 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
 
-        summary, _, loss_val, global_step = self.sess.run([self.summary, self.train_step, self.loss,self.global_step],
+        summary, _, loss_val, global_step, max_x, max_q = self.sess.run([self.summary, self.train_step, self.loss,self.global_step,self.max_size_x, self.max_size_q],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
         self.writer.add_summary(summary, global_step=self.sess.run(self.global_step))
         # Regularly save the models parameters
-        print(loss_val)
+        print([loss_val,max_x[1],max_q[1]])
         if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
 
@@ -352,6 +354,7 @@ class Model(object):
         #padding
         q = padding(q)
         x = padding(x)
+        print([len(x[0]), len(q[0])])
         y1_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
         y2_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
         for i in range(self.Bs):

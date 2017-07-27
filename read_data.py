@@ -165,7 +165,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     save(config, data, shared, out_name)
 
 
-def read_data(config, data_type, ref, data_filter=None):
+def read_data(config, data_type, ref, data_filter = None):
     data_path = os.path.join(config['directories']['out_dir'], "data_{}.json".format(data_type))
     shared_path = os.path.join(config['directories']['out_dir'], "shared_{}.json".format(data_type))
     with open(data_path, 'r') as fh:
@@ -173,17 +173,15 @@ def read_data(config, data_type, ref, data_filter=None):
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
         
+        
     num_examples = len(next(iter(data.values()))) #number of questions
-    if data_filter is None: #if there is a filter to discard some of the passages or questions
+    #max_par = max([len(shared['x'][i][j]) for i in range(len(shared['x'])) for j in range(len(shared['x'][i]))]) #max paragraph size
+    #max_q = max([len(data['q'][i]) for i in range(len(data['q']))]) # max question size
+    
+    if data_filter: #if there is a filter to discard some of the passages or questions
+        valid_idxs = data_filter_func(config, data, shared)
+    else: 
         valid_idxs = range(num_examples)
-    else:
-        mask = []
-        keys = data.keys()
-        values = data.values()
-        for vals in zip(*values): #each question
-            each = {key: val for key, val in zip(keys, vals)} #rebuilt dictionary for each question
-            mask.append(data_filter(each, shared))
-        valid_idxs = [idx for idx in range(len(mask)) if mask[idx]]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     if not ref: #TODO: why there is this "if"? If not useful, delete
@@ -236,6 +234,17 @@ def read_data(config, data_type, ref, data_filter=None):
     data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs}
     return data_set
 
+
+def data_filter_func (config, data, shared):
+    valid_idxs = []
+    for i in range(len(data['q'])):
+        q = data['q'][i]
+        rx = data['*x'][i]
+        x = shared['x'][rx[0]][rx[1]]
+        if (len(q) <= config['pre']['max_question_size']) and (len(x) <= config['pre']['max_paragraph_size']):
+            valid_idxs.append(i)
+    return valid_idxs
+
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
     config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype = np.float32)
@@ -243,12 +252,13 @@ def update_config(config, data_set):
 
 def get_batch_idxs(config, data_set):
     # Compute number of questions
-    nQuestions = len(next(iter(data_set['data'].values())))
+    valid_idxs = data_set['valid_idxs']
+    nQuestions = len(valid_idxs)
     n = 0
     batch_idxs = set();
     while n < config['model']['batch_size']:
         batch_idxs.add(randint(0, nQuestions-1))
         n = len(batch_idxs)
-    batch_idxs = list(batch_idxs)
+    batch_idxs =  [valid_idxs[i] for i in batch_idxs]
     batch_idxs.sort()
     return batch_idxs
