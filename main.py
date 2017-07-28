@@ -21,7 +21,7 @@ def main(config):
         # Create an instance of the model
 		model = Model(config)
         # Train the model
-	for i in tqdm(range(10000)):
+	for i in tqdm(range(config['model']['steps'])):
 			batch_idxs = get_batch_idxs(config, data)
 			model.train(batch_idxs, data)
 
