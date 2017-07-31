@@ -95,12 +95,15 @@ class Model(object):
 
         # Define optimizer and train step
         # TODO: We could add the optimizer option to the config file. ADAM for now.
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
+        #self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
 
+        #not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
-        self.train_step = tf.contrib.layers.optimize_loss(
-            self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
-            summaries=["gradients"], name='TIBINO')
+        #self.train_step = tf.contrib.layers.optimize_loss(
+        #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
+        #    summaries=["gradients"], name='TIBINO')
+        self.train_step = self.optimizer.minimize(self.loss, global_step=self.global_step)
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
@@ -139,9 +142,9 @@ class Model(object):
         summary, _, loss_val, global_step, max_x, max_q = self.sess.run([self.summary, self.train_step, self.loss,self.global_step,self.max_size_x, self.max_size_q],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
-        self.writer.add_summary(summary, global_step=self.sess.run(self.global_step))
+        self.writer.add_summary(summary, global_step)
         # Regularly save the models parameters
-        print([loss_val,max_x[1],max_q[1]])
+        print([loss_val,max_x[1],max_q[1],global_step])        
         if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + '/model.ckpt')
 
@@ -172,7 +175,7 @@ class Model(object):
                 self.tensor_dict['q'] = Aq
 
         # Build the LSTM cell with dropout
-        cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+        cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
         dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = config['model']['input_keep_prob'])
         #if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
             #dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
@@ -219,7 +222,7 @@ class Model(object):
             # Hidden size multiplied by two because of bidirectional layer
 
             # [Bs, Ps, 8Hn]
-            cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
             dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(cell_after_att, input_keep_prob = config['model']['input_keep_prob'])
             (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att,
                                                                 cell_bw=dropout_cell_after_att,
@@ -230,7 +233,7 @@ class Model(object):
             g0 = tf.concat([fw_g0, bw_g0], axis = 2)
 
             # [Bs, Ps, 8Hn]
-            cell_after_att_2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            cell_after_att_2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
             dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(cell_after_att_2, input_keep_prob = config['model']['input_keep_prob'])
             (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att_2,
                                                                 cell_bw=dropout_cell_after_att_2,
@@ -255,7 +258,7 @@ class Model(object):
                           [1, self.Ps, 1])
 
             # [Bs, Sn, Ss, 2Hn]
-            cell_y2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True)
+            cell_y2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
             dropout_cell_y2 = tf.contrib.rnn.DropoutWrapper(cell_y2, input_keep_prob = config['model']['input_keep_prob'])
             (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw = dropout_cell_y2,
                                                                 cell_bw=dropout_cell_y2,
@@ -289,9 +292,8 @@ class Model(object):
 
         """
 		# TODO: add collections if useful. Otherwise delete them.
-        losses = tf.nn.softmax_cross_entropy_with_logits(
-            logits = self.logits_y1, labels = tf.cast(self.y, 'float'))
-        ce_loss = tf.reduce_mean(losses)
+        ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+            logits = self.logits_y1, labels = tf.cast(self.y, 'float')))
         # tf.add_to_collection('losses', ce_loss)
         ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits = self.logits_y2, labels = tf.cast(self.y2, 'float')))
