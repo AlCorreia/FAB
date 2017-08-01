@@ -121,7 +121,10 @@ class Model(object):
         # Add ops to save and restore all the variables.
         self.saver = tf.train.Saver()
         # Initialize all variables
-        self.sess.run(tf.global_variables_initializer())
+        if not config['model']['load_checkpoint']:
+                self.sess.run(tf.global_variables_initializer())
+        else:
+                self._load()
         # Add a writer object to log the models's progress in the "train" folder
         self.writer = tf.summary.FileWriter(self.directory + '/train',
                                             self.sess.graph)
@@ -146,7 +149,12 @@ class Model(object):
         # Regularly save the models parameters
         print([loss_val,max_x[1],max_q[1],global_step])        
         if global_step % 1000 == 0:
-            self.saver.save(self.sess, self.directory + '/model.ckpt')
+            self.saver.save(self.sess, self.directory + 'model.ckpt')
+
+    def _load(self): #To load a checkpoint
+        #TODO: Add an structure to allow the user to save/load different checkpoints.
+        pdb.set_trace()
+        self.saver.restore(self.sess,self.directory + 'model.ckpt')
 
     def _build_forward(self):
         """
