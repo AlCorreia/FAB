@@ -1,24 +1,24 @@
 {
-    "glove":{
+	"glove":{
 		"Comment_":"#Specifications of the glove model to use",
-        "dir":"./data/glove",
-        "corpus":"6B",
-        "vec_size":"100",
-        "db":"write-math"
+        	"dir":"./data/glove",
+        	"corpus":"6B",
+        	"vec_size":"100",
+        	"db":"write-math"
     },
 	"directories":{
 		"Comment_":"#Directories info.",
 		"source_dir":"./data/squad/",
-	    "target_dir":"./",
+		"target_dir":"./",
 		"out_dir":"./"
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
 		"run": false,
-	    "lower_word": true,
+		"lower_word": true,
 		"finetune": false,
-        "data_filter": true,
-	    "word_count_th": 10,
+		"data_filter": true,
+		"word_count_th": 10,
 		"char_count_th": 50,
 		"max_question_size": 60,
 		"max_paragraph_size": 400,
@@ -27,7 +27,8 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-        "is_training":true,
+		"load_checkpoint":true,		
+		"is_training":true,
 		"run":true,
 		"learning_rate":0.5,
 		"batch_size":30,
@@ -36,9 +37,8 @@
 		"decay_steps":200,
 		"decay_rate":0.999,
 		"n_hidden": 100,
-        "vocabulary_size":200000,
-        "char_vocabulary_size":30,
-        "input_keep_prob":0.8,
-        "share_lstm_weights":true
+		"char_vocabulary_size":30,
+		"input_keep_prob":0.8,
+		"share_lstm_weights":true
 	}
 }
