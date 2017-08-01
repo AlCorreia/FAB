@@ -153,7 +153,6 @@ class Model(object):
 
     def _load(self): #To load a checkpoint
         #TODO: Add an structure to allow the user to save/load different checkpoints.
-        pdb.set_trace()
         self.saver.restore(self.sess,self.directory + 'model.ckpt')
 
     def _build_forward(self):
