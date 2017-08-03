@@ -142,12 +142,13 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
 
-        summary, _, loss_val, global_step, max_x, max_q = self.sess.run([self.summary, self.train_step, self.loss,self.global_step,self.max_size_x, self.max_size_q],
+        summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss,self.global_step,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
         self.writer.add_summary(summary, global_step)
         # Regularly save the models parameters
-        print([loss_val,max_x[1],max_q[1],global_step])        
+        EM, F1 = EM_and_F1(self.answer,[Start_Index,End_Index])
+        print([loss_val,max_x[1],max_q[1],global_step, EM, F1])        
         if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + 'model.ckpt')
 
@@ -292,6 +293,9 @@ class Model(object):
             self.logits_y2 = logits_y2
             self.yp = yp
             self.yp2 = yp2
+            self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
+            self.End_Index = tf.argmax(self.logits_y2, axis=-1)
+        
 
     def _build_loss(self):
         """
@@ -312,6 +316,7 @@ class Model(object):
         tf.summary.scalar('ce_loss2', ce_loss2)
         tf.summary.scalar('loss', self.loss)
         # tf.add_to_collection('ema/scalar', self.loss)
+
 
     # TODO: Better define this function.
     # Don't know whether it's better to implement it on the model or on in the
@@ -359,7 +364,7 @@ class Model(object):
             y1.append([y[0] for y in yi]) # Get all the first indices in the sequence
             y2.append([y[1]-1 for y in yi]) # Get all the second indices... and correct for -1
         
-
+        self.answer=[y1,y2]
         #padding
         q = padding(q)
         x = padding(x)
@@ -461,3 +466,23 @@ def attention_layer(x, q, x_embed, q_embed, x_len, q_len, hidden_size, batch_siz
 
     G = tf.concat([h, U_a, tf.multiply(h, U_a), tf.multiply(h, H_a)], axis=-1)
     return G
+
+def EM_and_F1(answer,answer_est):
+    EM=[]
+    F1=[]
+    y1_est,y2_est = answer_est
+    y1,y2 = answer 
+    for i in range(len(y1_est)):
+        EM_i = []
+        F1_i = []
+        for j in range(len(y1[i])):
+            EM_i.append(1.0 if y1[i][j]==y1_est[i] and y2[i][j]==y2_est[i] else 0.0)
+            TT=max([min([y2[i][j]+1,y2_est[i]+1])-max([y1[i][j],y1_est[i]]),0])
+            FT=y2_est[i]+1-y1_est[i]-TT
+            FF=y2[i][j]+1-y1[i][j]-TT
+            a=TT/(TT+FT)
+            b=TT/(TT+FF)
+            F1_i.append(2/(1/a+1/b) if a!=0 and b!=0 else 0)
+        EM.append(max(EM_i))
+        F1.append(max(F1_i))
+    return [sum(EM)/len(EM), sum(F1)/len(F1)]
