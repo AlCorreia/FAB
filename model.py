@@ -165,14 +165,9 @@ class Model(object):
         with tf.variable_scope("word_emb"), tf.device("/cpu:0"):
             # TODO: I am not sure that having a config variable for this is the best solution
             # TODO: Save the embedding matrix somewhere other than the config file
-            if config['model']['is_training']:
-                word_emb_mat = tf.get_variable("word_emb_mat",
-                                               dtype=tf.float32,
-                                               initializer = config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
-            else:
-                word_emb_mat = tf.get_variable("word_emb_mat",
-                                               shape=[self.WVs, self.WEs],
-                                               dtype=tf.float32)
+            word_emb_mat = tf.get_variable("word_emb_mat",
+                                       dtype=tf.float32,
+                                       initializer = config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
             if config['pre']['use_glove_for_unk']:
                 word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
 
