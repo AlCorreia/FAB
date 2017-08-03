@@ -145,9 +145,13 @@ class Model(object):
         summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss,self.global_step,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index],
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
-        self.writer.add_summary(summary, global_step)
-        # Regularly save the models parameters
         EM, F1 = EM_and_F1(self.answer,[Start_Index,End_Index])
+        summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
+        summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1)])
+        self.writer.add_summary(summary, global_step)
+        self.writer.add_summary(summary_F1, global_step)
+        self.writer.add_summary(summary_EM, global_step)
+        # Regularly save the models parameters
         print([loss_val,max_x[1],max_q[1],global_step, EM, F1])        
         if global_step % 1000 == 0:
             self.saver.save(self.sess, self.directory + 'model.ckpt')
