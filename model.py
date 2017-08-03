@@ -184,7 +184,7 @@ class Model(object):
 
         # Build the LSTM cell with dropout
         cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
-        dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = config['model']['input_keep_prob'])
+        dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
         #if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
             #dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
 
@@ -204,23 +204,23 @@ class Model(object):
             u = tf.concat([fw_u, bw_u], axis = 2)
             if config['model']['share_lstm_weights']:
                 tf.get_variable_scope().reuse_variables()
-                # [Bs, Ps, 2Hn] Why without dropout?
-                (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
-                                                                  cell_bw=cell,
+                # [Bs, Ps, 2Hn] Originally these cells didnt have dropout
+                (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell,
+                                                                  cell_bw=dropout_cell,
                                                                   inputs=Ax,
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='u1')
-                h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
             else:
-                # [Bs, Ps, 2Hn]
-                (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell,
-                                                                  cell_bw=cell,
+                # [Bs, Ps, 2Hn] Originally these cells didnt have dropout
+                (fw_h, bw_h), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell,
+                                                                  cell_bw=dropout_cell,
                                                                   inputs=Ax,
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='h1')
-                h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
+            
+            h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
             self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
 
@@ -231,7 +231,7 @@ class Model(object):
 
             # [Bs, Ps, 8Hn]
             cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
-            dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(cell_after_att, input_keep_prob = config['model']['input_keep_prob'])
+            dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(cell_after_att, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
             (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att,
                                                                 cell_bw=dropout_cell_after_att,
                                                                 inputs=p0,
@@ -242,7 +242,7 @@ class Model(object):
 
             # [Bs, Ps, 8Hn]
             cell_after_att_2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
-            dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(cell_after_att_2, input_keep_prob = config['model']['input_keep_prob'])
+            dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(cell_after_att_2, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
             (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att_2,
                                                                 cell_bw=dropout_cell_after_att_2,
                                                                 inputs=g0,
@@ -267,7 +267,7 @@ class Model(object):
 
             # [Bs, Sn, Ss, 2Hn]
             cell_y2 = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
-            dropout_cell_y2 = tf.contrib.rnn.DropoutWrapper(cell_y2, input_keep_prob = config['model']['input_keep_prob'])
+            dropout_cell_y2 = tf.contrib.rnn.DropoutWrapper(cell_y2, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
             (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw = dropout_cell_y2,
                                                                 cell_bw=dropout_cell_y2,
                                                                 inputs = tf.concat([p0, g1,a1i, tf.multiply(g1, a1i)], axis = 2),
