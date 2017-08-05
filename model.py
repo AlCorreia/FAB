@@ -90,6 +90,10 @@ class Model(object):
         # Loss outputs
         self.loss = None
 
+        #Values for computing EM and F1 for dev 
+        self.EM_dev = []
+        self.F1_dev = []
+
         self._build_forward()
         self._build_loss()
 
@@ -151,10 +155,31 @@ class Model(object):
         self.writer.add_summary(summary, global_step)
         self.writer.add_summary(summary_F1, global_step)
         self.writer.add_summary(summary_EM, global_step)
-        # Regularly save the models parameters
-        print([loss_val,max_x[1],max_q[1],global_step, EM, F1])        
+        # Regularly save the models parameters      
         if global_step % 1000 == 0:
+            self.saver.save(self.sess, self.directory + 'ckpt/'+str(round(global_step/1000))+'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
+
+    def evaluate(self, batch_idxs, dataset):
+        """ Compute F1 and EM for the dev dataset
+
+            Parameters
+          d  ----------
+            batch_idxs : list of the idxs of each example
+            dataset : the correspondent json file
+
+        """
+        # Combine the input dictionaries for all the features models
+        feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
+
+        summary, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index],
+                                   feed_dict=feed_dict)
+        # Write the results to Tensorboard
+        EM_dev, F1_dev = EM_and_F1(self.answer,[Start_Index,End_Index])
+        self.EM_dev.append(EM_dev)
+        self.F1_dev.append(F1_dev)
+
+
 
     def _load(self): #To load a checkpoint
         #TODO: Add an structure to allow the user to save/load different checkpoints.
@@ -367,7 +392,6 @@ class Model(object):
         #padding
         q = padding(q)
         x = padding(x)
-        print([len(x[0]), len(q[0])])
         y1_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
         y2_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
         for i in range(self.Bs):
