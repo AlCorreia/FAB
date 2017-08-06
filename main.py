@@ -2,6 +2,7 @@ import argparse
 #import configparser
 from read_data import prepro_each, read_data, get_batch_idxs, update_config
 import sys
+from time import sleep
 import json
 import os
 import pdb
@@ -27,24 +28,26 @@ def main(config):
 		for i in tqdm(range(config['model']['steps'])):
 			batch_idxs = get_batch_idxs(config, data)
 			model.train(batch_idxs, data)
-			if i % 1000 == 0: #every 1000 steps check F1 and EM of the model
+			if i % config['model']['steps_to_save'] == 0: #every 1000 steps check F1 and EM of the model
 				EM_dev, F1_dev = evaluate(config,model,data_dev)
 				summary_EM_dev = tf.Summary(value=[tf.Summary.Value(tag='EM_dev', simple_value=EM_dev)])
 				summary_F1_dev = tf.Summary(value=[tf.Summary.Value(tag='F1_dev', simple_value=F1_dev)])   
 				model.writer.add_summary(summary_F1_dev, i)
 				model.writer.add_summary(summary_EM_dev, i)
-				print([EM_dev,F1_dev])
+				#TODO Make this print more readable than now
+				print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+'\n')
 	#To check the exact match and F1 of the model for dev
 	if config['model']['evaluate_dev']:
-		EM_dev,F1_dev=evaluate(config,model)
-		print([EM_dev,F1_dev])
+		EM_dev,F1_dev=evaluate(config,model,data_dev)
+		print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+'\n')
 			
 
 def evaluate(config,model,data_dev): #To check the exact match and F1 of the model
 	model.EM_dev = []
 	model.F1_dev = []
 	for i in tqdm (range(math.floor(
-			len(data_dev['valid_idxs'])/config['model']['batch_size']))):
+			len(data_dev['valid_idxs'])/config['model']['batch_size'])),
+			file=sys.stdout): #this file = sys.stdout is to only to allow the print function
 		init = (i-1) * config['model']['batch_size']
 		end = i*config['model']['batch_size']
 		batch_idxs = range(init,end)

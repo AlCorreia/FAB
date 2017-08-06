@@ -123,14 +123,14 @@ class Model(object):
         # Define a session for the model
         self.sess = tf.Session()
         # Add ops to save and restore all the variables.
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(max_to_keep = 100)#to not delete previous checkpoints
         # Initialize all variables
         if not config['model']['load_checkpoint']:
                 self.sess.run(tf.global_variables_initializer())
         else:
                 self._load()
         # Add a writer object to log the models's progress in the "train" folder
-        self.writer = tf.summary.FileWriter(self.directory + '/train',
+        self.writer = tf.summary.FileWriter(self.directory + 'train',
                                             self.sess.graph)
 
 
@@ -156,7 +156,7 @@ class Model(object):
         self.writer.add_summary(summary_F1, global_step)
         self.writer.add_summary(summary_EM, global_step)
         # Regularly save the models parameters      
-        if global_step % 1000 == 0:
+        if global_step % self.config['model']['steps_to_save'] == 0:
             self.saver.save(self.sess, self.directory + 'ckpt/'+str(round(global_step/1000))+'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
 
@@ -172,8 +172,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
 
-        summary, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index],
-                                   feed_dict=feed_dict)
+        summary, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index], feed_dict=feed_dict)
         # Write the results to Tensorboard
         EM_dev, F1_dev = EM_and_F1(self.answer,[Start_Index,End_Index])
         self.EM_dev.append(EM_dev)
@@ -196,21 +195,17 @@ class Model(object):
             # TODO: Save the embedding matrix somewhere other than the config file
             word_emb_mat = tf.get_variable("word_emb_mat",
                                        dtype=tf.float32,
-                                       initializer = config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
+                                       initializer =  config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
             if config['pre']['use_glove_for_unk']:
                 word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
-
             with tf.name_scope("word"):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
                 self.tensor_dict['x'] = Ax
                 self.tensor_dict['q'] = Aq
-
         # Build the LSTM cell with dropout
         cell = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
         dropout_cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
-        #if not config['model']['is_training']: # i guess it is not ideal, but for now it is the idea to avoid switchatble_dropoutwrapper
-            #dropout_cell = cell  #Maybe it would be better to add tf.cond before tf.nn.bidirectional....
 
         # Calculate the number of used values in the each matrix
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 1)  # [Bs]
