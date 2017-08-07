@@ -25,7 +25,8 @@ def main(config):
 		model = Model(config)
         # Train the model
 	if config['model']['train']:
-		for i in tqdm(range(config['model']['steps'])):
+		global_step_init = 0 if not config['model']['load_checkpoint'] else model.sess.run([model.global_step][0]+1)  #to get global step
+		for i in tqdm(range(global_step_init,config['model']['steps'])):
 			batch_idxs = get_batch_idxs(config, data)
 			model.train(batch_idxs, data)
 			if i % config['model']['steps_to_save'] == 0: #every 1000 steps check F1 and EM of the model
