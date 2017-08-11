@@ -14,17 +14,18 @@ VERY_LOW_NUMBER = -1e30
 
 Base_Frequency = 10000
 number_of_words=3
-embedding_size=512 #MUST BE EVEN FOR ENCODER
+embedding_size=256 #MUST BE EVEN FOR ENCODER
 size_of_vocabulary=100
 batch_size=3
-multihead_size = 8
+multihead_size = 4
+FF_hidden_size = 1024
 word_zeros=np.zeros([1,embedding_size])
 embedding_dict=np.array(np.concatenate([word_zeros,np.random.rand(size_of_vocabulary,embedding_size)],axis=0), dtype=np.float32)
 
-def encoder (x,q):
+def encoder (X,Q):
 	#Compute the number of words in passage and question
-	size_x = tf.shape(x)[-2]
-	size_q = tf.shape(q)[-2]
+	size_x = tf.shape(X)[-2]
+	size_q = tf.shape(Q)[-2]
 	#Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
 	pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x,size_q),lambda: size_x, lambda: size_q)), 1),tf.float32)
 	#Create a vector with all the exponents
@@ -44,8 +45,8 @@ def encoder (x,q):
 	encoder_q = tf.slice(encoder,[0,0],[size_q,embedding_size])
 
 	#Encoding x and q
-	x_encoded = tf.add(x, encoder_x)
-	q_encoded = tf.add(q, encoder_q)
+	x_encoded = tf.add(X, encoder_x)
+	q_encoded = tf.add(Q, encoder_q)
 	return x_encoded, q_encoded
 
 
@@ -100,11 +101,42 @@ def layer_normalization (x, gain = 1.0):
 	normalized_x = tf.transpose(
 				tf.subtract(
 					tf.multiply(tf.divide(gain,var),
-						tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
+					tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
 					mean),
 				[1,2,0])
 	return normalized_x
 
+def FeedForward_NN(x,scope = None):
+	#Starting variables
+	with tf.variable_scope(scope):
+		W1 = tf.get_variable('W1', shape = [embedding_size, FF_hidden_size])
+		b1 = tf.get_variable('b1', shape = [1, FF_hidden_size])
+		W2 = tf.get_variable('W2', shape = [FF_hidden_size, embedding_size])
+		b2 = tf.get_variable('b2', shape = [1, embedding_size])
+		
+		#Computation of #W2*Relu(W1*x+b1)+b2
+		affine_op1 = tf.add(tf.matmul(tf.reshape(x,[-1,embedding_size]),W1),b1) #W1*x+b1
+		nonlinear_op = tf.nn.relu(affine_op1) #Relu(W1*x+b1)
+		affine_op2 = tf.add(tf.matmul(nonlinear_op,W2),b2) #W2*Relu(W1*x+b1)+b2
+		output = tf.reshape(affine_op2, [batch_size,-1,embedding_size]) #Reshaping
+	return output
+
+def one_layer (X, Q, mask, scope):
+	with tf.variable_scope(scope):
+		att_layer_qq = layer_normalization(tf.add(Q, attention_layer(X = Q, mask = mask['qq'], scope = 'qq')))
+		att_layer_xx = layer_normalization(tf.add(X, attention_layer(X = X, mask = mask['xx'], scope = 'xx')))
+		FF_xx = layer_normalization(tf.add(att_layer_xx, FeedForward_NN(att_layer_xx,'FF_xx')))
+		att_layer_xq = layer_normalization(tf.add(att_layer_qq,attention_layer(X = FF_xx, X2 = att_layer_qq, mask = mask['xq'], scope = 'xq')))
+		FF_qq = layer_normalization(tf.add(att_layer_xq,FeedForward_NN(att_layer_xq,'FF_qq')))
+	return FF_xx, FF_qq
+
+def y_selection(X, mask, scope)
+	with tf.variable_scope(scope):
+		W = tf.get_variable('W', shape = [embedding_size, 1])
+		affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,embedding_size]),W1)) #W*x
+		output = tf.softmax(tf.add(tf.reshape(affine_op2, [batch_size,-1]),tf.multiply(1 - mask, VERY_LOW_NUMBER)))
+	return output
+		
 paragraphs=[np.random.randint(1,100, size=np.random.randint(9,12)) for i in range(batch_size)]
 questions = [np.random.randint(1,100, size=i) for i in range(2,7,2)]
 
@@ -124,30 +156,35 @@ def length(sequence):
 
 x = tf.placeholder("int32", [batch_size, None]) #embedding size =1
 q = tf.placeholder("int32", [batch_size, None]) #embedding size =1
-x_input=tf.nn.embedding_lookup(embedding_dict,x)
-q_input=tf.nn.embedding_lookup(embedding_dict,q)
+x_input = tf.nn.embedding_lookup(embedding_dict,x)
+q_input = tf.nn.embedding_lookup(embedding_dict,q)
 x_mask = tf.cast(tf.sign(x),tf.float32)
 q_mask = tf.cast(tf.sign(q),tf.float32)
 
 #Mask matrices
-mask_matrix_xx=tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))),tf.float32)
-mask_matrix_qq=tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
-mask_matrix_xq=tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(x,1))),tf.float32)
+mask = {}
+mask['x'] = tf.cast(tf.sign(x),tf.float32)
+mask['q'] = tf.cast(tf.sign(q),tf.float32)
+mask['xx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))),tf.float32)
+mask['qq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
+mask['xq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(x,1))),tf.float32)
 
-#Implementing encoder
+#Encoder
 x_encoded, q_encoded = encoder (x_input,q_input)
-att_layer_qq = attention_layer(X = q_encoded, mask = mask_matrix_qq, scope = 'qq')
-att_layer_xx = attention_layer(X = x_encoded, mask = mask_matrix_xx, scope = 'xx')
-att_layer_xq = attention_layer(X = x_encoded, X2 = q_encoded, mask = mask_matrix_xq, scope = 'xq')
-#self_att_layer_xx = cross_attention_layer(x_encoded,mask_matrix_xq)
-normalized_qq = layer_normalization(self_att_layer_qq)
-#Self-Attention
+#Computing all attentions
+x_1, q_1 = one_layer(x_encoded, q_encoded, mask, 'layer_0')
+x_2, q_2 = one_layer(x_1, q_1, mask, 'layer_1')
+x_3, q_3 = one_layer(x_2, q_2, mask, 'layer_2')
+#att_layer_qq = attention_layer(X = q_encoded, mask = mask_matrix_qq, scope = 'qq')
+#att_layer_xx = attention_layer(X = x_encoded, mask = mask_matrix_xx, scope = 'xx')
+#att_layer_xq = attention_layer(X = att_layer_xx, X2 = att_layer_qq, mask = mask_matrix_xq, scope = 'xq')
+#$normalized_qq = layer_normalization(att_layer_qq)
+#a = FeedForward_NN(normalized_qq,'FF_nn')
 
 # Launch the graph in a session.
 # Evaluate the tensor `c`.
 with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
     tf.global_variables_initializer().run()
-    pdb.set_trace()
-    np.shape(sess.run([cross_att_layer_xq],feed_dict={x : paragraphs, q: questions}))
+    np.shape(sess.run([x_3],feed_dict={x : paragraphs, q: questions}))
     pdb.set_trace()
     a=1
