@@ -49,7 +49,7 @@ def encoder (x,q):
 	return x_encoded, q_encoded
 
 
-def self_attention_layer(X, mask,scope=None):
+def attention_layer(X, mask,X2 = None, scope=None):
 	#Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
 	with tf.variable_scope(scope):
 		#In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
@@ -59,6 +59,7 @@ def self_attention_layer(X, mask,scope=None):
 		
 		#W_sym = WQ_EigVec*EigenVal*EigVec
 		# x*EigVec
+		
 		x_proj = tf.matmul(X,
 			tf.tile(tf.expand_dims(WQ_EigVec,0),[batch_size,1,1]))
 		# x*EigVec is split into multi_head_size smaller matrices
@@ -66,9 +67,15 @@ def self_attention_layer(X, mask,scope=None):
 		# x*EigVec*EigVal computed
 		WQ_EigenVal_Split = tf.split(WQ_EigenVal,num_or_size_splits = multihead_size, axis = 0)
 		x_proj_scaled = tf.multiply(x_proj_split,WQ_EigenVal_Split)
+		if X2 is None:
+			logits = tf.matmul(tf.transpose(x_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
+		else:
+			X2_proj = tf.matmul(X2,
+				tf.tile(tf.expand_dims(WQ_EigVec,0),[batch_size,1,1]))
+			X2_proj_split = tf.transpose(tf.split(X2_proj,num_or_size_splits = multihead_size, axis = 2),[1,2,0,3])
+			logits = tf.matmul(tf.transpose(X2_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
 
 		#(x*EigVec) * (x*EigVec*EigVal)' 
-		logits = tf.matmul(tf.transpose(x_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
 		#Sofmatx with masking
 		softmax = tf.nn.softmax(
 				tf.add(
@@ -86,6 +93,17 @@ def self_attention_layer(X, mask,scope=None):
 		#Concatenate everything togeter
 		x_weighted_proj_concat = tf.concat(tf.unstack(x_weighted_proj, axis = 0), axis = 2)
 	return x_weighted_proj_concat
+
+def layer_normalization (x, gain = 1.0):
+	mean, var = tf.nn.moments(x, axes=[-1]) #To computed variance and means
+	var += 1e-30 #to avoid NaN, if variance = 0
+	normalized_x = tf.transpose(
+				tf.subtract(
+					tf.multiply(tf.divide(gain,var),
+						tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
+					mean),
+				[1,2,0])
+	return normalized_x
 
 paragraphs=[np.random.randint(1,100, size=np.random.randint(9,12)) for i in range(batch_size)]
 questions = [np.random.randint(1,100, size=i) for i in range(2,7,2)]
@@ -114,13 +132,15 @@ q_mask = tf.cast(tf.sign(q),tf.float32)
 #Mask matrices
 mask_matrix_xx=tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))),tf.float32)
 mask_matrix_qq=tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
-mask_matrix_xq=tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(q,1))),tf.float32)
+mask_matrix_xq=tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(x,1))),tf.float32)
 
 #Implementing encoder
 x_encoded, q_encoded = encoder (x_input,q_input)
-self_att_layer_qq = self_attention_layer(q_encoded, mask = mask_matrix_qq, scope = 'qq')
-self_att_layer_xx = self_attention_layer(x_encoded, mask = mask_matrix_xx, scope = 'xx')
+att_layer_qq = attention_layer(X = q_encoded, mask = mask_matrix_qq, scope = 'qq')
+att_layer_xx = attention_layer(X = x_encoded, mask = mask_matrix_xx, scope = 'xx')
+att_layer_xq = attention_layer(X = x_encoded, X2 = q_encoded, mask = mask_matrix_xq, scope = 'xq')
 #self_att_layer_xx = cross_attention_layer(x_encoded,mask_matrix_xq)
+normalized_qq = layer_normalization(self_att_layer_qq)
 #Self-Attention
 
 # Launch the graph in a session.
@@ -128,7 +148,6 @@ self_att_layer_xx = self_attention_layer(x_encoded, mask = mask_matrix_xx, scope
 with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
     tf.global_variables_initializer().run()
     pdb.set_trace()
-    np.shape(sess.run([self_att_layer_qq],feed_dict={x : paragraphs, q: questions}))
+    np.shape(sess.run([cross_att_layer_xq],feed_dict={x : paragraphs, q: questions}))
     pdb.set_trace()
     a=1
-
