@@ -22,6 +22,13 @@ FF_hidden_size = 1024
 word_zeros=np.zeros([1,embedding_size])
 embedding_dict=np.array(np.concatenate([word_zeros,np.random.rand(size_of_vocabulary,embedding_size)],axis=0), dtype=np.float32)
 
+def embed_scaling (x):
+	W_Scal = tf.get_variable('W_Scal', shape = [embedding_size, embedding_size])
+	b_Scal = tf.get_variable('b_Scal', shape = [1, embedding_size])
+	affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,embedding_size]),W_Scal),b_Scal) #W1*x+b1
+	x_reshaped = tf.reshape(affine_op, [batch_size,-1,embedding_size])
+	return x_reshaped
+
 def encoder (X,Q):
 	#Compute the number of words in passage and question
 	size_x = tf.shape(X)[-2]
@@ -130,11 +137,11 @@ def one_layer (X, Q, mask, scope):
 		FF_qq = layer_normalization(tf.add(att_layer_xq,FeedForward_NN(att_layer_xq,'FF_qq')))
 	return FF_xx, FF_qq
 
-def y_selection(X, mask, scope)
+def y_selection(X, mask, scope):
 	with tf.variable_scope(scope):
-		W = tf.get_variable('W', shape = [embedding_size, 1])
-		affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,embedding_size]),W1)) #W*x
-		output = tf.softmax(tf.add(tf.reshape(affine_op2, [batch_size,-1]),tf.multiply(1 - mask, VERY_LOW_NUMBER)))
+		W = tf.get_variable('W', shape = [embedding_size, 1], dtype = tf.float32)
+		X_scaled = tf.matmul(tf.reshape(X,[-1,embedding_size]),W) #W*x
+		output = tf.nn.softmax(tf.add(tf.reshape(X_scaled, [batch_size,-1]),tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
 	return output
 		
 paragraphs=[np.random.randint(1,100, size=np.random.randint(9,12)) for i in range(batch_size)]
@@ -158,8 +165,6 @@ x = tf.placeholder("int32", [batch_size, None]) #embedding size =1
 q = tf.placeholder("int32", [batch_size, None]) #embedding size =1
 x_input = tf.nn.embedding_lookup(embedding_dict,x)
 q_input = tf.nn.embedding_lookup(embedding_dict,q)
-x_mask = tf.cast(tf.sign(x),tf.float32)
-q_mask = tf.cast(tf.sign(q),tf.float32)
 
 #Mask matrices
 mask = {}
@@ -169,12 +174,20 @@ mask['xx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))
 mask['qq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
 mask['xq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(x,1))),tf.float32)
 
-#Encoder
-x_encoded, q_encoded = encoder (x_input,q_input)
+#Scaling matrices
+with tf.variable_scope('Scaling') as scope:
+	x_scaled = embed_scaling(x_input)
+	scope.reuse_variables()
+	q_scaled = embed_scaling(q_input)
+
+#Encoding Variables
+x_encoded, q_encoded = encoder (x_scaled,q_scaled)
 #Computing all attentions
 x_1, q_1 = one_layer(x_encoded, q_encoded, mask, 'layer_0')
 x_2, q_2 = one_layer(x_1, q_1, mask, 'layer_1')
 x_3, q_3 = one_layer(x_2, q_2, mask, 'layer_2')
+y1 = y_selection(X = x_3,scope = 'y1_sel', mask = mask['x'])
+y2 = y_selection(X = x_3,scope = 'y2_sel', mask = mask['x'])
 #att_layer_qq = attention_layer(X = q_encoded, mask = mask_matrix_qq, scope = 'qq')
 #att_layer_xx = attention_layer(X = x_encoded, mask = mask_matrix_xx, scope = 'xx')
 #att_layer_xq = attention_layer(X = att_layer_xx, X2 = att_layer_qq, mask = mask_matrix_xq, scope = 'xq')
@@ -185,6 +198,6 @@ x_3, q_3 = one_layer(x_2, q_2, mask, 'layer_2')
 # Evaluate the tensor `c`.
 with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
     tf.global_variables_initializer().run()
-    np.shape(sess.run([x_3],feed_dict={x : paragraphs, q: questions}))
+    np.shape(sess.run([x_scaled],feed_dict={x : paragraphs, q: questions}))
     pdb.set_trace()
     a=1
