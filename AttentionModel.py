@@ -106,10 +106,10 @@ def layer_normalization (x, gain = 1.0):
 	mean, var = tf.nn.moments(x, axes=[-1]) #To computed variance and means
 	var += 1e-30 #to avoid NaN, if variance = 0
 	normalized_x = tf.transpose(
-				tf.subtract(
-					tf.multiply(tf.divide(gain,var),
-					tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
-					mean),
+				tf.multiply(
+					tf.add(mean,
+						tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
+				tf.divide(gain,var)),
 				[1,2,0])
 	return normalized_x
 
@@ -198,6 +198,6 @@ y2 = y_selection(X = x_3,scope = 'y2_sel', mask = mask['x'])
 # Evaluate the tensor `c`.
 with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
     tf.global_variables_initializer().run()
-    np.shape(sess.run([x_scaled],feed_dict={x : paragraphs, q: questions}))
+    np.shape(sess.run([y1],feed_dict={x : paragraphs, q: questions}))
     pdb.set_trace()
     a=1
