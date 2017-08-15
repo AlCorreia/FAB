@@ -2,7 +2,9 @@
 #!/usr/bin/env bash
 
 DATA_DIR=data
+CHECKPOINT_DIR=ckpt
 mkdir $DATA_DIR
+mkdir $CHECKPOINT_DIR
 
 # Download SQuAD
 SQUAD_DIR=$DATA_DIR/squad
