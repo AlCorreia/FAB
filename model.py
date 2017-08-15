@@ -46,6 +46,8 @@ class Model(object):
         # 2. Lowercase letters: indicates a measure
         #    m: maximum, n: number, s: size, o: out
         self.Bs = config['model']['batch_size']
+        self.MHs = config['model']['multi_head_size']  #Multi-Head
+        self.FFHs = config['model']['FeedForward_Hidden_Size']
         #self.Ps = config['model']['max_par_size']
         #self.Qs = config['model']['max_ques_size']
         #self.Wm = config['model']['max_word_size']
@@ -94,7 +96,10 @@ class Model(object):
         self.EM_dev = []
         self.F1_dev = []
 
-        self._build_forward()
+        if config['model']['is_Attention_Model']:
+            self._build_forward_Attention()
+        else:
+            self._build_forward()
         self._build_loss()
 
         # Define optimizer and train step
@@ -184,6 +189,169 @@ class Model(object):
         #TODO: Add an structure to allow the user to save/load different checkpoints.
         self.saver.restore(self.sess,self.directory + 'model.ckpt')
 
+    def _build_forward_Attention(self):
+
+        def embed_scaling (x):
+            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEs])
+            b_Scal = tf.get_variable('b_Scal', shape = [1, self.WEs])
+            affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W_Scal),b_Scal) #W1*x+b1
+            x_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEs])
+            return x_reshaped
+
+        def encoder (X,Q):
+            #Compute the number of words in passage and question
+            size_x = tf.shape(X)[-2]
+            size_q = tf.shape(Q)[-2]
+            #Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
+            pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x,size_q),lambda: size_x, lambda: size_q)), 1),tf.float32)
+            #Create a vector with all the exponents
+            exponents = tf.divide(tf.range(self.WEs/2),self.WEs/2-1)
+            #Power the base frequency by exponents
+            freq_PG = tf.expand_dims(tf.pow(1/config['model']['encoder_base_freq'],exponents),0)
+
+            #Compute the encoder values
+            encoder_sin = tf.sin(tf.matmul(pos,freq_PG))
+            encoder_cos = tf.cos(tf.matmul(pos,freq_PG))
+
+            #Concatenate both values
+            encoder = tf.concat([encoder_sin,encoder_cos], axis = 1)
+
+            #Computes the encoder values for x and q
+            encoder_x = tf.slice(encoder,[0,0],[size_x,self.WEs])
+            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEs])
+
+	#Encoding x and q
+            x_encoded = tf.add(X, encoder_x)
+            q_encoded = tf.add(Q, encoder_q)
+            return x_encoded, q_encoded
+
+        def attention_layer(X, mask,X2 = None, scope=None):
+            #Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
+            with tf.variable_scope(scope):
+                #In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
+                WQ_EigVec = tf.nn.l2_normalize(tf.get_variable(name = 'WQEigVec', shape = [self.WEs,self.WEs], dtype = tf.float32), dim = 0)
+                WQ_EigenVal = tf.get_variable(name = 'WGEigVal', shape = [self.WEs])
+                WV = tf.get_variable(name = 'WV', shape = [self.WEs,self.WEs], dtype = tf.float32)
+
+                #W_sym = WQ_EigVec*EigenVal*EigVec
+                # x*EigVec
+                
+                x_proj = tf.matmul(X,
+                    tf.tile(tf.expand_dims(WQ_EigVec,0),[self.Bs,1,1]))
+                # x*EigVec is split into multi_head_size smaller matrices
+                x_proj_split = tf.transpose(tf.split(x_proj,num_or_size_splits = self.MHs, axis = 2),[1,2,0,3])
+                # x*EigVec*EigVal computed
+                WQ_EigenVal_Split = tf.split(WQ_EigenVal,num_or_size_splits = self.MHs, axis = 0)
+                x_proj_scaled = tf.multiply(x_proj_split,WQ_EigenVal_Split)
+                if X2 is None:
+                    logits = tf.matmul(tf.transpose(x_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
+                else:
+                    X2_proj = tf.matmul(X2,
+                        tf.tile(tf.expand_dims(WQ_EigVec,0),[self.Bs,1,1]))
+                    X2_proj_split = tf.transpose(tf.split(X2_proj,num_or_size_splits = self.MHs, axis = 2),[1,2,0,3])
+                    logits = tf.matmul(tf.transpose(X2_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
+
+                #(x*EigVec) * (x*EigVec*EigVal)' 
+                #Sofmatx with masking
+                softmax = tf.nn.softmax(
+                            tf.add(
+                                tf.divide(tf.transpose(logits,[1,0,2,3]),tf.sqrt(tf.cast(self.WEs,tf.float32))),
+                                tf.multiply(1 - mask, VERY_LOW_NUMBER)
+                                ), dim = -1)
+                #Final mask is applied
+                softmax = tf.multiply (mask,softmax)
+                #Computed the new x vector accoring to weights from softmax
+                x_weighted = tf.matmul(softmax,tf.tile(tf.expand_dims(X,0),[self.MHs,1,1,1]))
+                #Because of multihead attention, WV must be split into multi_head_size smaller matrices
+                WV_Split = tf.split(WV, num_or_size_splits = self.MHs, axis = 1)
+                #x_weighted*Wv
+                x_weighted_proj = tf.matmul(x_weighted,tf.tile(tf.expand_dims(WV_Split,1),[1,self.Bs,1,1]))
+                #Concatenate everything togeter
+                x_weighted_proj_concat = tf.concat(tf.unstack(x_weighted_proj, axis = 0), axis = 2)
+            return x_weighted_proj_concat
+
+        def layer_normalization (x, gain = 1.0):
+            mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
+            var += 1e-30 #to avoid NaN, if variance = 0
+            normalized_x = tf.transpose(
+                                tf.multiply(
+                                    tf.add(mean,
+                                        tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
+                                    tf.divide(gain,var)),
+				[1,2,0])
+            return normalized_x
+
+        def FeedForward_NN(x,scope = None):
+            #Starting variables
+            with tf.variable_scope(scope):
+                W1 = tf.get_variable('W1', shape = [self.WEs, self.FFHs])
+                b1 = tf.get_variable('b1', shape = [1, self.FFHs])
+                W2 = tf.get_variable('W2', shape = [self.FFHs, self.WEs])
+                b2 = tf.get_variable('b2', shape = [1, self.WEs])
+                
+                #Computation of #W2*Relu(W1*x+b1)+b2
+                affine_op1 = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W1),b1) #W1*x+b1
+                nonlinear_op = tf.nn.relu(affine_op1) #Relu(W1*x+b1)
+                affine_op2 = tf.add(tf.matmul(nonlinear_op,W2),b2) #W2*Relu(W1*x+b1)+b2
+                output = tf.reshape(affine_op2, [self.Bs,-1,self.WEs]) #Reshaping
+            return output
+
+        def one_layer (X1, X2, mask, scope):
+            with tf.variable_scope(scope):
+                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X = X1, mask = mask['x1x1'], scope = 'x1x1')))
+                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X = X2, mask = mask['x2x2'], scope = 'x2x2')))
+                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')))
+                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')))
+                FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')))
+            return FF_X1X1, FF_X2X2
+
+        def y_selection(X, mask, scope):
+            with tf.variable_scope(scope):
+                W = tf.get_variable('W', shape = [self.WEs, 1], dtype = tf.float32)
+                logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEs]),W), [self.Bs,-1]) #W*x
+                output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
+            return output, logits
+    
+
+        config = self.config
+        #Mask matrices
+        mask = {}
+        mask['x1'] = tf.cast(tf.sign(self.q),tf.float32)
+        mask['x2'] = tf.cast(tf.sign(self.x),tf.float32)
+        mask['x1x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.q,1))),tf.float32)
+        mask['x2x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.x,1))),tf.float32)
+        mask['x2x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.q,1))),tf.float32)
+        with tf.variable_scope("word_emb"), tf.device("/cpu:0"):
+            # TODO: I am not sure that having a config variable for this is the best solution
+            # TODO: Save the embedding matrix somewhere other than the config file
+            word_emb_mat = tf.get_variable("word_emb_mat",
+                                       dtype=tf.float32,
+                                       initializer =  config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
+            if config['pre']['use_glove_for_unk']:
+                word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
+            with tf.name_scope("word"):
+                Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
+                Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
+
+        with tf.variable_scope('Scaling') as scope:
+            x_scaled = embed_scaling(Ax)
+            scope.reuse_variables()
+            q_scaled = embed_scaling(Aq)
+
+        #Encoding Variables
+        x_encoded, q_encoded = encoder (x_scaled,q_scaled)
+        #Computing all attentions
+        q_1, x_1 = one_layer(q_encoded, x_encoded, mask, 'layer_0')
+        q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
+        q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
+        q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3')
+        q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4')
+        q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_5')
+        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x2'])
+        self.yp2, self.logits_y2 = y_selection(X = x_6,scope = 'y2_sel', mask = mask['x2'])
+        self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
+        self.End_Index = tf.argmax(self.logits_y2, axis=-1)
+        
     def _build_forward(self):
         """
             Builds the model's feedforward network.
