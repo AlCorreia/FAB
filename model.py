@@ -32,12 +32,6 @@ class Model(object):
         self.global_step = tf.Variable(0, trainable=False)
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
-        initial_learning_rate = config['model']['learning_rate']
-        self.learning_rate = tf.train.exponential_decay(learning_rate=initial_learning_rate,
-                                                        global_step=self.global_step,
-                                                        decay_steps=config['model']['decay_steps'],
-                                                        decay_rate=config['model']['decay_rate'],
-                                                        staircase=True)
 
         # TODO: Think of a better way to define these dimensions
         # 1. Capitals letters: indicates type of element.
@@ -104,8 +98,20 @@ class Model(object):
 
         # Define optimizer and train step
         # TODO: We could add the optimizer option to the config file. ADAM for now.
-        self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
-        #self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        if config['model']['opt_type'] == "AdaDelta":
+            initial_learning_rate = config['model']['learning_rate_AdaDelta']
+            self.learning_rate = tf.train.exponential_decay(learning_rate=initial_learning_rate,
+                                                        global_step=self.global_step,
+                                                        decay_steps=config['model']['decay_steps'],
+                                                        decay_rate=config['model']['decay_rate'],
+                                                        staircase=True)
+            self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
+        elif config['model']['opt_type'] == "Adam":
+            warmup_steps = 4000
+            self.learning_rate = tf.multiply(
+                                    tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32),-0.5	), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(warmup_steps,tf.float32),-1.5))]),
+                                    tf.pow(tf.cast(self.WEs,tf.float32),-0.5))
+            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate, beta1 = 0.9, beta2 = 0.98, epsilon = 1e-03)
 
         #not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
