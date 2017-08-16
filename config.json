@@ -33,7 +33,7 @@
 		"train": true,
 		"evaluate_dev": true,
 		"learning_rate":0.5,
-		"batch_size":15,
+		"batch_size":7,
 		"steps":72000,
 		"steps_to_save": 1000,
 		"forget_bias":1.0,
@@ -45,6 +45,8 @@
 		"share_lstm_weights":true,
 		"encoder_base_freq": 10000.0,
 		"multi_head_size": 6,
-		"FeedForward_Hidden_Size": 1024
+		"FeedForward_Hidden_Size": 1024,
+		"learning_rate_AdaDelta":0.5,
+		"opt_type": "Adam"
 	}
 }
