@@ -14,10 +14,10 @@ VERY_LOW_NUMBER = -1e30
 
 Base_Frequency = 10000
 number_of_words=3
-embedding_size=256 #MUST BE EVEN FOR ENCODER
+embedding_size=300 #MUST BE EVEN FOR ENCODER
 size_of_vocabulary=100
-batch_size=3
-multihead_size = 4
+batch_size=400
+multihead_size = 6
 FF_hidden_size = 1024
 word_zeros=np.zeros([1,embedding_size])
 embedding_dict=np.array(np.concatenate([word_zeros,np.random.rand(size_of_vocabulary,embedding_size)],axis=0), dtype=np.float32)
@@ -61,46 +61,45 @@ def attention_layer(X, mask,X2 = None, scope=None):
 	#Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
 	with tf.variable_scope(scope):
 		#In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
-		WQ_EigVec = tf.nn.l2_normalize(tf.get_variable(name = 'WQEigVec', shape = [embedding_size,embedding_size], dtype = tf.float32), dim = 0)
-		WQ_EigenVal = tf.get_variable(name = 'WGEigVal', shape = [embedding_size])
+		WQ = tf.get_variable(name = 'WQ', shape = [embedding_size,embedding_size], dtype = tf.float32)
+		WK = tf.get_variable(name = 'WK', shape = [embedding_size,embedding_size], dtype = tf.float32)
 		WV = tf.get_variable(name = 'WV', shape = [embedding_size,embedding_size], dtype = tf.float32)
+		WO = tf.get_variable(name = 'WO', shape = [embedding_size,embedding_size], dtype = tf.float32)
 		
 		#W_sym = WQ_EigVec*EigenVal*EigVec
 		# x*EigVec
-		
-		x_proj = tf.matmul(X,
-			tf.tile(tf.expand_dims(WQ_EigVec,0),[batch_size,1,1]))
+
+		x1_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,embedding_size]),WQ),[batch_size,-1,embedding_size])
 		# x*EigVec is split into multi_head_size smaller matrices
-		x_proj_split = tf.transpose(tf.split(x_proj,num_or_size_splits = multihead_size, axis = 2),[1,2,0,3])
+		x1_proj = tf.split(x1_proj,num_or_size_splits = multihead_size, axis = 2)
 		# x*EigVec*EigVal computed
-		WQ_EigenVal_Split = tf.split(WQ_EigenVal,num_or_size_splits = multihead_size, axis = 0)
-		x_proj_scaled = tf.multiply(x_proj_split,WQ_EigenVal_Split)
 		if X2 is None:
-			logits = tf.matmul(tf.transpose(x_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
-		else:
-			X2_proj = tf.matmul(X2,
-				tf.tile(tf.expand_dims(WQ_EigVec,0),[batch_size,1,1]))
-			X2_proj_split = tf.transpose(tf.split(X2_proj,num_or_size_splits = multihead_size, axis = 2),[1,2,0,3])
-			logits = tf.matmul(tf.transpose(X2_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
+			X2 = X
+
+		x2_proj = tf.reshape(tf.matmul(tf.reshape(X2,[-1,embedding_size]),WK),[batch_size,-1,embedding_size])
+		x2_proj = tf.split(x2_proj,num_or_size_splits = multihead_size, axis = 2)
+		logits = tf.matmul(x2_proj,tf.transpose(x1_proj,[0,1,3,2]))
 
 		#(x*EigVec) * (x*EigVec*EigVal)' 
-		#Sofmatx with masking
+		#Sofmax with masking
 		softmax = tf.nn.softmax(
 				tf.add(
-					tf.divide(tf.transpose(logits,[1,0,2,3]),tf.sqrt(tf.cast(embedding_size,tf.float32))),
-					tf.multiply(1 - mask, VERY_LOW_NUMBER)
+				tf.divide(logits,
+					tf.sqrt(tf.cast(embedding_size,tf.float32))),
+				tf.multiply(1 - mask, VERY_LOW_NUMBER)
 					), dim = -1)
 		#Final mask is applied
 		softmax = tf.multiply (mask,softmax)
 		#Computed the new x vector accoring to weights from softmax
-		x_weighted = tf.matmul(softmax,tf.tile(tf.expand_dims(X,0),[multihead_size,1,1,1]))
+		
+		x3_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,embedding_size]),WK),[batch_size,-1,embedding_size])
+		x3_proj = tf.split(x3_proj,num_or_size_splits = multihead_size, axis = 2)
 		#Because of multihead attention, WV must be split into multi_head_size smaller matrices
-		WV_Split = tf.split(WV, num_or_size_splits = multihead_size, axis = 1)
-		#x_weighted*Wv
-		x_weighted_proj = tf.matmul(x_weighted,tf.tile(tf.expand_dims(WV_Split,1),[1,batch_size,1,1]))
+		x_attention = tf.matmul(softmax,x3_proj)
+		x_final = tf.concat(tf.unstack(x_attention, axis = 0), axis = 2)
+		x_final = tf.reshape(tf.matmul(tf.reshape(x_final,[-1,embedding_size]),WO),[batch_size,-1,embedding_size])
 		#Concatenate everything togeter
-		x_weighted_proj_concat = tf.concat(tf.unstack(x_weighted_proj, axis = 0), axis = 2)
-	return x_weighted_proj_concat
+	return x_final
 
 def layer_normalization (x, gain = 1.0):
 	mean, var = tf.nn.moments(x, axes=[-1]) #To computed variance and means
@@ -128,24 +127,25 @@ def FeedForward_NN(x,scope = None):
 		output = tf.reshape(affine_op2, [batch_size,-1,embedding_size]) #Reshaping
 	return output
 
-def one_layer (X, Q, mask, scope):
+def one_layer (X1, X2, mask, scope):
 	with tf.variable_scope(scope):
-		att_layer_qq = layer_normalization(tf.add(Q, attention_layer(X = Q, mask = mask['qq'], scope = 'qq')))
-		att_layer_xx = layer_normalization(tf.add(X, attention_layer(X = X, mask = mask['xx'], scope = 'xx')))
-		FF_xx = layer_normalization(tf.add(att_layer_xx, FeedForward_NN(att_layer_xx,'FF_xx')))
-		att_layer_xq = layer_normalization(tf.add(att_layer_qq,attention_layer(X = FF_xx, X2 = att_layer_qq, mask = mask['xq'], scope = 'xq')))
-		FF_qq = layer_normalization(tf.add(att_layer_xq,FeedForward_NN(att_layer_xq,'FF_qq')))
-	return FF_xx, FF_qq
+		att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X = X1, mask = mask['x1x1'], scope = 'x1x1')))
+		att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X = X2, mask = mask['x2x2'], scope = 'x2x2')))
+		FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')))
+		att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')))
+		FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')))
+	return FF_X1X1, FF_X2X2
 
 def y_selection(X, mask, scope):
 	with tf.variable_scope(scope):
 		W = tf.get_variable('W', shape = [embedding_size, 1], dtype = tf.float32)
-		X_scaled = tf.matmul(tf.reshape(X,[-1,embedding_size]),W) #W*x
-		output = tf.nn.softmax(tf.add(tf.reshape(X_scaled, [batch_size,-1]),tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
-	return output
+		logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,embedding_size]),W), [batch_size,-1]) #W*x
+		output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
+	return output, logits
 		
-paragraphs=[np.random.randint(1,100, size=np.random.randint(9,12)) for i in range(batch_size)]
-questions = [np.random.randint(1,100, size=i) for i in range(2,7,2)]
+#$paragraphs=[np.random.randint(1,100, size=np.random.randint(200,400)) for i in range(batch_size)]
+paragraphs=[np.random.randint(1,100, size=400) for i in range(batch_size)]
+questions = [np.random.randint(1,100, size=60) for i in range(batch_size)]
 
 def padding(seq):
     max_size=max([len(seq[i]) for i in  range(len(seq))])
@@ -168,11 +168,11 @@ q_input = tf.nn.embedding_lookup(embedding_dict,q)
 
 #Mask matrices
 mask = {}
-mask['x'] = tf.cast(tf.sign(x),tf.float32)
-mask['q'] = tf.cast(tf.sign(q),tf.float32)
-mask['xx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))),tf.float32)
-mask['qq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
-mask['xq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(x,1))),tf.float32)
+mask['x1'] = tf.cast(tf.sign(q),tf.float32)
+mask['x2'] = tf.cast(tf.sign(x),tf.float32)
+mask['x1x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(q,-1),tf.expand_dims(q,1))),tf.float32)
+mask['x2x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(x,1))),tf.float32)
+mask['x2x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(x,-1),tf.expand_dims(q,1))),tf.float32)
 
 #Scaling matrices
 with tf.variable_scope('Scaling') as scope:
@@ -183,21 +183,25 @@ with tf.variable_scope('Scaling') as scope:
 #Encoding Variables
 x_encoded, q_encoded = encoder (x_scaled,q_scaled)
 #Computing all attentions
-x_1, q_1 = one_layer(x_encoded, q_encoded, mask, 'layer_0')
-x_2, q_2 = one_layer(x_1, q_1, mask, 'layer_1')
-x_3, q_3 = one_layer(x_2, q_2, mask, 'layer_2')
-y1 = y_selection(X = x_3,scope = 'y1_sel', mask = mask['x'])
-y2 = y_selection(X = x_3,scope = 'y2_sel', mask = mask['x'])
-#att_layer_qq = attention_layer(X = q_encoded, mask = mask_matrix_qq, scope = 'qq')
-#att_layer_xx = attention_layer(X = x_encoded, mask = mask_matrix_xx, scope = 'xx')
-#att_layer_xq = attention_layer(X = att_layer_xx, X2 = att_layer_qq, mask = mask_matrix_xq, scope = 'xq')
-#$normalized_qq = layer_normalization(att_layer_qq)
-#a = FeedForward_NN(normalized_qq,'FF_nn')
+q_1, x_1 = one_layer(q_encoded, x_encoded, mask, 'layer_0')
+q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
+q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
+q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3')
+q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4')
+q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_5')
+yp, logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x2'])
+yp2, logits_y2 = y_selection(X = x_6,scope = 'y2_sel', mask = mask['x2'])
+Start_Index = tf.argmax(logits_y1, axis=-1)
+End_Index = tf.argmax(logits_y2, axis=-1)
 
 # Launch the graph in a session.
 # Evaluate the tensor `c`.
-with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1)
+
+
+config = tf.ConfigProto()
+config.gpu_options.allocator_type = 'BFC'
+with tf.Session(config=config) as sess:
     tf.global_variables_initializer().run()
-    np.shape(sess.run([y1],feed_dict={x : paragraphs, q: questions}))
-    pdb.set_trace()
+    print(sess.run([Start_Index,End_Index],feed_dict={x : paragraphs, q: questions}))
     a=1
