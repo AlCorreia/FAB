@@ -47,6 +47,7 @@ class Model(object):
         #self.Wm = config['model']['max_word_size']
         self.WVs = config['model']['vocabulary_size']
         self.WEs = int(config['glove']['vec_size']) # Assumed to be equal to the GloVe vector size
+        self.WEAs = config['model']['attention_emb_size'] #Word-embedding attention size
         # self.CVs = config['model']['char_vocabulary_size']
         # self.CEs = config['model']['char_emb_size']
         # self.Co = config['model']['char_out_size']
@@ -198,10 +199,10 @@ class Model(object):
     def _build_forward_Attention(self):
 
         def embed_scaling (x):
-            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEs])
-            b_Scal = tf.get_variable('b_Scal', shape = [1, self.WEs])
+            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEAs])
+            b_Scal = tf.get_variable('b_Scal', shape = [1, self.WEAs])
             affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W_Scal),b_Scal) #W1*x+b1
-            x_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEs])
+            x_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEAs])
             return x_reshaped
 
         def encoder (X,Q):
@@ -211,7 +212,7 @@ class Model(object):
             #Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x,size_q),lambda: size_x, lambda: size_q)), 1),tf.float32)
             #Create a vector with all the exponents
-            exponents = tf.divide(tf.range(self.WEs/2),self.WEs/2-1)
+            exponents = tf.divide(tf.range(self.WEAs/2),self.WEAs/2-1)
             #Power the base frequency by exponents
             freq_PG = tf.expand_dims(tf.pow(1/config['model']['encoder_base_freq'],exponents),0)
 
@@ -223,58 +224,59 @@ class Model(object):
             encoder = tf.concat([encoder_sin,encoder_cos], axis = 1)
 
             #Computes the encoder values for x and q
-            encoder_x = tf.slice(encoder,[0,0],[size_x,self.WEs])
-            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEs])
+            encoder_x = tf.slice(encoder,[0,0],[size_x,self.WEAs])
+            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
 
 	#Encoding x and q
             x_encoded = tf.add(X, encoder_x)
             q_encoded = tf.add(Q, encoder_q)
+            x_encoded = tf.cond(self.is_training,lambda: tf.nn.dropout(x_encoded,keep_prob = 1.0 - config['model']['dropout_att_encoder']), lambda: x_encoded)
+            q_encoded = tf.cond(self.is_training,lambda: tf.nn.dropout(q_encoded,keep_prob = 1.0 - config['model']['dropout_att_encoder']), lambda: q_encoded)
             return x_encoded, q_encoded
 
         def attention_layer(X, mask,X2 = None, scope=None):
             #Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
             with tf.variable_scope(scope):
                 #In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
-                WQ_EigVec = tf.nn.l2_normalize(tf.get_variable(name = 'WQEigVec', shape = [self.WEs,self.WEs], dtype = tf.float32), dim = 0)
-                WQ_EigenVal = tf.get_variable(name = 'WGEigVal', shape = [self.WEs])
-                WV = tf.get_variable(name = 'WV', shape = [self.WEs,self.WEs], dtype = tf.float32)
-
+                WQ = tf.get_variable(name = 'WQ', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
+                WK = tf.get_variable(name = 'WK', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
+                WV = tf.get_variable(name = 'WV', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
+                WO = tf.get_variable(name = 'WO', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
+                
                 #W_sym = WQ_EigVec*EigenVal*EigVec
                 # x*EigVec
-                
-                x_proj = tf.matmul(X,
-                    tf.tile(tf.expand_dims(WQ_EigVec,0),[self.Bs,1,1]))
+
+                x1_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),WQ),[self.Bs,-1,self.WEAs])
                 # x*EigVec is split into multi_head_size smaller matrices
-                x_proj_split = tf.transpose(tf.split(x_proj,num_or_size_splits = self.MHs, axis = 2),[1,2,0,3])
+                x1_proj = tf.split(x1_proj,num_or_size_splits = self.MHs, axis = 2)
                 # x*EigVec*EigVal computed
-                WQ_EigenVal_Split = tf.split(WQ_EigenVal,num_or_size_splits = self.MHs, axis = 0)
-                x_proj_scaled = tf.multiply(x_proj_split,WQ_EigenVal_Split)
                 if X2 is None:
-                    logits = tf.matmul(tf.transpose(x_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
-                else:
-                    X2_proj = tf.matmul(X2,
-                        tf.tile(tf.expand_dims(WQ_EigVec,0),[self.Bs,1,1]))
-                    X2_proj_split = tf.transpose(tf.split(X2_proj,num_or_size_splits = self.MHs, axis = 2),[1,2,0,3])
-                    logits = tf.matmul(tf.transpose(X2_proj_split,[0,2,1,3]),tf.transpose(x_proj_scaled,[0,2,3,1]))
+                    X2 = X
+
+                x2_proj = tf.reshape(tf.matmul(tf.reshape(X2,[-1,self.WEAs]),WK),[self.Bs,-1,self.WEAs])
+                x2_proj = tf.split(x2_proj,num_or_size_splits =  self.MHs, axis = 2)
+                logits = tf.matmul(x2_proj,tf.transpose(x1_proj,[0,1,3,2]))
 
                 #(x*EigVec) * (x*EigVec*EigVal)' 
-                #Sofmatx with masking
+                #Sofmax with masking
                 softmax = tf.nn.softmax(
-                            tf.add(
-                                tf.divide(tf.transpose(logits,[1,0,2,3]),tf.sqrt(tf.cast(self.WEs,tf.float32))),
-                                tf.multiply(1 - mask, VERY_LOW_NUMBER)
-                                ), dim = -1)
+                                tf.add(
+                                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs,tf.float32))),
+                                    tf.multiply(1 - mask, VERY_LOW_NUMBER)),
+                          dim = -1)
                 #Final mask is applied
                 softmax = tf.multiply (mask,softmax)
                 #Computed the new x vector accoring to weights from softmax
-                x_weighted = tf.matmul(softmax,tf.tile(tf.expand_dims(X,0),[self.MHs,1,1,1]))
+                
+                x3_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),WK),[self.Bs,-1,self.WEAs])
+                x3_proj = tf.split(x3_proj,num_or_size_splits =  self.MHs, axis = 2)
                 #Because of multihead attention, WV must be split into multi_head_size smaller matrices
-                WV_Split = tf.split(WV, num_or_size_splits = self.MHs, axis = 1)
-                #x_weighted*Wv
-                x_weighted_proj = tf.matmul(x_weighted,tf.tile(tf.expand_dims(WV_Split,1),[1,self.Bs,1,1]))
-                #Concatenate everything togeter
-                x_weighted_proj_concat = tf.concat(tf.unstack(x_weighted_proj, axis = 0), axis = 2)
-            return x_weighted_proj_concat
+                x_attention = tf.matmul(softmax,x3_proj)
+                x_final = tf.concat(tf.unstack(x_attention, axis = 0), axis = 2)
+                x_final = tf.reshape(tf.matmul(tf.reshape(x_final,[-1,self.WEAs]),WO),[self.Bs,-1,self.WEAs])
+                x_final_dropout = tf.cond(self.is_training,lambda: tf.nn.dropout(x_final,keep_prob = 1.0 - config['model']['dropout_att_sublayer']), lambda: x_final)
+                #Concatenate everything together
+            return x_final_dropout
 
         def layer_normalization (x, gain = 1.0):
             mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
@@ -290,16 +292,17 @@ class Model(object):
         def FeedForward_NN(x,scope = None):
             #Starting variables
             with tf.variable_scope(scope):
-                W1 = tf.get_variable('W1', shape = [self.WEs, self.FFHs])
+                W1 = tf.get_variable('W1', shape = [self.WEAs, self.FFHs])
                 b1 = tf.get_variable('b1', shape = [1, self.FFHs])
-                W2 = tf.get_variable('W2', shape = [self.FFHs, self.WEs])
-                b2 = tf.get_variable('b2', shape = [1, self.WEs])
+                W2 = tf.get_variable('W2', shape = [self.FFHs, self.WEAs])
+                b2 = tf.get_variable('b2', shape = [1, self.WEAs])
                 
                 #Computation of #W2*Relu(W1*x+b1)+b2
-                affine_op1 = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W1),b1) #W1*x+b1
+                affine_op1 = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEAs]),W1),b1) #W1*x+b1
                 nonlinear_op = tf.nn.relu(affine_op1) #Relu(W1*x+b1)
                 affine_op2 = tf.add(tf.matmul(nonlinear_op,W2),b2) #W2*Relu(W1*x+b1)+b2
-                output = tf.reshape(affine_op2, [self.Bs,-1,self.WEs]) #Reshaping
+                output = tf.reshape(affine_op2, [self.Bs,-1,self.WEAs]) #Reshaping
+                output = tf.cond(self.is_training,lambda: tf.nn.dropout(output,keep_prob = 1.0 - config['model']['dropout_att_sublayer']), lambda: output)
             return output
 
         def one_layer (X1, X2, mask, scope):
@@ -313,8 +316,8 @@ class Model(object):
 
         def y_selection(X, mask, scope):
             with tf.variable_scope(scope):
-                W = tf.get_variable('W', shape = [self.WEs, 1], dtype = tf.float32)
-                logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEs]),W), [self.Bs,-1]) #W*x
+                W = tf.get_variable('W', shape = [self.WEAs, 1], dtype = tf.float32)
+                logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
                 output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
             return output, logits
     
@@ -332,29 +335,31 @@ class Model(object):
             # TODO: Save the embedding matrix somewhere other than the config file
             word_emb_mat = tf.get_variable("word_emb_mat",
                                        dtype=tf.float32,
-                                       initializer =  config['model']['emb_mat_unk_words']) # [self.WVs, self.WEs]
+                                       initializer =  config['model']['emb_mat_unk_words']) # [self.WVs, self.WEAs]
             if config['pre']['use_glove_for_unk']:
                 word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], axis = 0)
             with tf.name_scope("word"):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
 
-        with tf.variable_scope('Scaling') as scope:
+        with tf.variable_scope('Scaling') as scope, tf.device('/cpu:0'):
             x_scaled = embed_scaling(Ax)
             scope.reuse_variables()
             q_scaled = embed_scaling(Aq)
 
         #Encoding Variables
-        x_encoded, q_encoded = encoder (x_scaled,q_scaled)
+        with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
+            x_encoded, q_encoded = encoder (x_scaled,q_scaled)
         #Computing all attentions
         q_1, x_1 = one_layer(q_encoded, x_encoded, mask, 'layer_0')
         q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
         q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
         q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3')
         q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4')
-        q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_5')
-        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x2'])
-        self.yp2, self.logits_y2 = y_selection(X = x_6,scope = 'y2_sel', mask = mask['x2'])
+        _, x_y1 = one_layer(q_5, x_5, mask, 'layer_y1')
+        _, x_y2 = one_layer(q_5, x_5, mask, 'layer_y2')
+        self.yp, self.logits_y1 = y_selection(X = x_y1,scope = 'y1_sel', mask = mask['x2'])
+        self.yp2, self.logits_y2 = y_selection(X = x_y2,scope = 'y2_sel', mask = mask['x2'])
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
         
@@ -537,8 +542,9 @@ class Model(object):
             else:
                 return 1 #unknown word
 
-        def padding(seq): #for padding a batch
-            max_size=max([len(seq[i]) for i in  range(len(seq))])
+        def padding(seq,max_size = None): #for padding a batch
+            if max_size is None:
+                max_size=max([len(seq[i]) for i in  range(len(seq))])
             new_seq=[np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])],axis=0)  for i in range(len(seq))]
             return np.int_(new_seq)
 
