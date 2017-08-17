@@ -33,7 +33,7 @@
 		"train": true,
 		"evaluate_dev": true,
 		"learning_rate":0.5,
-		"batch_size":7,
+		"batch_size":15,
 		"steps":72000,
 		"steps_to_save": 1000,
 		"forget_bias":1.0,
@@ -44,9 +44,12 @@
 		"input_keep_prob":0.8,
 		"share_lstm_weights":true,
 		"encoder_base_freq": 10000.0,
-		"multi_head_size": 6,
-		"FeedForward_Hidden_Size": 1024,
+		"multi_head_size": 4,
+		"attention_emb_size": 128,
+		"FeedForward_Hidden_Size": 512,
 		"learning_rate_AdaDelta":0.5,
-		"opt_type": "Adam"
+		"opt_type": "Adam",
+                "dropout_att_encoder": 0.1,
+                "dropout_att_sublayer": 0.1
 	}
 }
