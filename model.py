@@ -109,9 +109,9 @@ class Model(object):
         elif config['model']['opt_type'] == "Adam":
             warmup_steps = 4000
             self.learning_rate = tf.multiply(
-                                    tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32),-0.5	), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(warmup_steps,tf.float32),-1.5))]),
+                                    tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32)/4,-0.5	), tf.multiply(tf.cast(self.global_step,tf.float32)/4, tf.pow(tf.cast(warmup_steps,tf.float32),-1.5))]),
                                     tf.pow(tf.cast(self.WEs,tf.float32),-0.5))
-            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate, beta1 = 0.9, beta2 = 0.98, epsilon = 1e-03)
+            self.optimizer = tf.train.AdamOptimizer(learning_rate = 0.0001, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-09)
 
         #not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
