@@ -2,6 +2,7 @@ from collections import Counter
 import json
 import numpy as np
 import nltk
+import math
 # nltk.download('punkt') Uncomment if you haven't installed the package yet
 import pandas as pd
 import os
@@ -77,6 +78,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     x, cx = [], []
     answerss = []
     p = []
+    paragraph_len, question_len = [], []
     word_counter, char_counter, lower_word_counter = Counter(), Counter(), Counter()
     start_ai = int(round(len(source_data['data']) * start_ratio))
     stop_ai = int(round(len(source_data['data']) * stop_ratio))
@@ -145,18 +147,19 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 rx.append(rxi)
                 ids.append(qa['id'])
                 idxs.append(len(idxs))
+                paragraph_len.append(len(xi))
+                question_len.append(len(qi))
                 answerss.append(answers)
 
             # TODO: Add debug option as in the original code
             # if args.debug:
             #     break
-
     word2vec_dict = get_word2vec(config, word_counter)
     lower_word2vec_dict = get_word2vec(config, lower_word_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
-            'idxs': idxs, 'ids': ids, 'answerss': answerss}
+            'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len}
     shared = {'x': x, 'cx': cx, 'p': p,
               'word_counter': word_counter, 'char_counter': char_counter, 'lower_word_counter': lower_word_counter,
               'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
@@ -179,9 +182,9 @@ def read_data(config, data_type, ref, data_filter = None):
     #max_q = max([len(data['q'][i]) for i in range(len(data['q']))]) # max question size
     
     if data_filter: #if there is a filter to discard some of the passages or questions
-        valid_idxs = data_filter_func(config, data, shared)
+        valid_idxs, valid_idxs_grouped = data_filter_func(config, data, shared)
     else: 
-        valid_idxs = range(num_examples)
+        valid_idxs, valid_idxs_grouped = range(num_examples), [range(num_examples)]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     if not ref: #TODO: why there is this "if"? If not useful, delete
@@ -231,19 +234,48 @@ def read_data(config, data_type, ref, data_filter = None):
                         else np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
                         for idx in range(word_vocab_size)]) #create random vectors for new words
 
-    data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs}
+    data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs,'valid_idxs_grouped': valid_idxs_grouped }
     return data_set
 
 
 def data_filter_func (config, data, shared):
     valid_idxs = []
+    x_len = data['paragraph_len']
+    q_len = data['question_len']
+    #Delete paragraphs and questions longer than threshold.
     for i in range(len(data['q'])):
-        q = data['q'][i]
-        rx = data['*x'][i]
-        x = shared['x'][rx[0]][rx[1]]
-        if (len(q) <= config['pre']['max_question_size']) and (len(x) <= config['pre']['max_paragraph_size']):
+        #q = data['q'][i]
+        #rx = data['*x'][i]
+        #x = shared['x'][rx[0]][rx[1]]
+        if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']):
             valid_idxs.append(i)
-    return valid_idxs
+
+    #Group paragraphs and questions with similar sizes
+    n_valid_idxs = len(valid_idxs)
+    x_len = [x_len[valid_idxs[i]] for i in range(len(valid_idxs))]
+    ordered_valid_idxs = [i[0] for i in sorted(zip(valid_idxs,x_len), key=lambda x:x[1])]
+    #n_chunks: number of groups, in which questions are separated according to their paragraph sizes
+    n_chunks = config['pre']['n_chunks']
+    #Remainder must be taken into account, as n_valid_idxs/n_chunks might not divide evenly.
+    remainder = n_valid_idxs % n_chunks 
+    chunk_size = math.floor(n_valid_idxs/n_chunks)
+    valid_idxs_grouped = []
+    index = 0
+    #Compute the n_chunks groups of questions
+    #TODO: I guess there might be a more elegant way than using this for if else
+    for i in range(n_chunks):
+        if remainder> 0:
+            sub_list = ordered_valid_idxs[index:index+chunk_size+1]
+            index = index+chunk_size+1
+            remainder = remainder - 1
+        else:
+            sub_list = ordered_valid_idxs[index:index+chunk_size]
+            index = index+chunk_size
+        valid_idxs_grouped.append(sub_list)
+    #Check if the number of questions after grouping them is the same as before
+    assert sum([len(valid_idxs_grouped[i]) for i in range(len(valid_idxs_grouped))]) == len(valid_idxs)
+    #Return individual questions order by their respective paragraph size and grouped questions
+    return ordered_valid_idxs, valid_idxs_grouped 
 
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
@@ -251,11 +283,17 @@ def update_config(config, data_set):
     return config
 
 def get_batch_idxs(config, data_set):
-    # Compute number of questions
-    valid_idxs = data_set['valid_idxs']
+    valid_idxs_groups = data_set['valid_idxs_grouped']
+    #Compute number of subgroups (separated by paragraph sizes)
+    nGroups = len(valid_idxs_groups)
+    # Choose randomly subgroup of questions (separated by paragraph sizes)
+    group_choice = randint(0,nGroups-1)
+    valid_idxs = valid_idxs_groups[group_choice]
+    # Compute number of questions in subgroup
     nQuestions = len(valid_idxs)
     n = 0
     batch_idxs = set();
+    #Choose randomly batch_size questions from the selected subgroup
     while n < config['model']['batch_size']:
         batch_idxs.add(randint(0, nQuestions-1))
         n = len(batch_idxs)
