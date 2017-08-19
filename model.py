@@ -60,8 +60,8 @@ class Model(object):
         # self.cx = tf.placeholder('int32', [self.Bs, None, None, W], name='cx')
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
         # self.cq = tf.placeholder('int32', [self.Bs, None, W], name='cq')
-        self.y = tf.placeholder('bool', [self.Bs, None], name='y')
-        self.y2 = tf.placeholder('bool', [self.Bs, None], name='y2')
+        self.y = tf.placeholder('float32', [self.Bs, None], name='y')
+        self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
         self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder(tf.float32, [None, self.WEs], name='new_emb_mat')
         
@@ -203,6 +203,7 @@ class Model(object):
             b_Scal = tf.get_variable('b_Scal', shape = [1, self.WEAs])
             affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W_Scal),b_Scal) #W1*x+b1
             x_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEAs])
+
             return x_reshaped
 
         def encoder (X,Q):
@@ -502,10 +503,10 @@ class Model(object):
         """
 		# TODO: add collections if useful. Otherwise delete them.
         ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-            logits = self.logits_y1, labels = tf.cast(self.y, 'float')))
+            logits = self.logits_y1, labels = self.y))
         # tf.add_to_collection('losses', ce_loss)
         ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-            logits = self.logits_y2, labels = tf.cast(self.y2, 'float')))
+            logits = self.logits_y2, labels = self.y2))
 		# tf.add_to_collection("losses", ce_loss2)
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
@@ -532,6 +533,7 @@ class Model(object):
         q=[]
         y1=[]
         y2=[]
+        label_smoothing = self.config['model']['label_smoothing']
         def word2id (word): #to convert a word to its respective id
             if self.config['pre']['lower_word']:
                 word=word.lower()
@@ -542,11 +544,14 @@ class Model(object):
             else:
                 return 1 #unknown word
 
-        def padding(seq,max_size = None): #for padding a batch
+        #Padding for passages, questions and answers. The answers output are (1-label_smoothing)/len(x)
+        def padding(seq, label_smoothing = 1.0, max_size = None): #for padding a batch
+            seq_len = [len(seq[i]) for i in  range(len(seq))]
             if max_size is None:
-                max_size=max([len(seq[i]) for i in  range(len(seq))])
+                max_size=max(seq_len)
             new_seq=[np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])],axis=0)  for i in range(len(seq))]
-            return np.int_(new_seq)
+            new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])],axis=0)  for i in range(len(seq))]
+            return np.int_(new_seq), new_seq_y
 
         # TODO: Add characters
         # convert every word to its respective id
@@ -565,14 +570,13 @@ class Model(object):
         
         self.answer=[y1,y2]
         #padding
-        q = padding(q)
-        x = padding(x)
-        y1_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
-        y2_new=np.zeros([self.Bs, len(next(iter(x)))], dtype = np.bool)
+        q, _ = padding(q)
+        x, new_seq_y = padding(x, label_smoothing = label_smoothing)
+        y1_new = new_seq_y
+        y2_new = np.copy(new_seq_y)
         for i in range(self.Bs):
-            y1_new[i][y1[i]]=True
-            y2_new[i][y2[i]]=True
-
+            y1_new[i][y1[i]]+= label_smoothing
+            y2_new[i][y2[i]]+= label_smoothing
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
