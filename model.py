@@ -11,7 +11,7 @@ import pdb
 
 from read_data import get_batch_idxs
 
-VERY_LOW_NUMBER=-1e30
+VERY_LOW_NUMBER=-1e20
 
 class Model(object):
     def __init__(self, config):
@@ -39,7 +39,7 @@ class Model(object):
         #    E: embedding, H: hidden
         # 2. Lowercase letters: indicates a measure
         #    m: maximum, n: number, s: size, o: out
-        self.Bs = config['model']['batch_size']
+        self.Bs = config['train']['batch_size']
         self.MHs = config['model']['multi_head_size']  #Multi-Head
         self.FFHs = config['model']['FeedForward_Hidden_Size']
         #self.Ps = config['model']['max_par_size']
@@ -99,20 +99,19 @@ class Model(object):
 
         # Define optimizer and train step
         # TODO: We could add the optimizer option to the config file. ADAM for now.
-        if config['model']['opt_type'] == "AdaDelta":
-            initial_learning_rate = config['model']['learning_rate_AdaDelta']
-            self.learning_rate = tf.train.exponential_decay(learning_rate=initial_learning_rate,
+        if config['train']['type'] == "AdaDelta":
+            self.learning_rate = tf.train.exponential_decay(learning_rate=config['train']['AdaDelta']['learning_rate'],
                                                         global_step=self.global_step,
-                                                        decay_steps=config['model']['decay_steps'],
-                                                        decay_rate=config['model']['decay_rate'],
+                                                        decay_steps=['train']['AdaDelta']['decay_steps'],
+                                                        decay_rate=['train']['AdaDelta']['decay_rate'],
                                                         staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
-        elif config['model']['opt_type'] == "Adam":
-            warmup_steps = 4000
-            self.learning_rate = tf.multiply(
-                                    tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32)/4,-0.5	), tf.multiply(tf.cast(self.global_step,tf.float32)/4, tf.pow(tf.cast(warmup_steps,tf.float32),-1.5))]),
-                                    tf.pow(tf.cast(self.WEs,tf.float32),-0.5))
-            self.optimizer = tf.train.AdamOptimizer(learning_rate = 0.0001, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-09)
+        elif config['train']['type'] == "Adam":
+		#Decay_Rate is positive and therefore the - sign in this equation.
+            self.learning_rate = config['train']['Adam']['learning_rate']*tf.multiply(
+                                    tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32),-self.config['train']['Adam']['decay_rate']), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(config['train']['Adam']['WarmupSteps'],tf.float32),-config['train']['Adam']['decay_rate']-1.0))]),
+                                    tf.pow(tf.cast(self.WEAs,tf.float32),-0.5))
+            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate, beta1 = config['train']['Adam']['beta1'], beta2 = config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
 
         #not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
@@ -168,7 +167,7 @@ class Model(object):
         self.writer.add_summary(summary_F1, global_step)
         self.writer.add_summary(summary_EM, global_step)
         # Regularly save the models parameters      
-        if global_step % self.config['model']['steps_to_save'] == 0:
+        if global_step % self.config['train']['steps_to_save'] == 0:
             self.saver.save(self.sess, self.directory + 'ckpt/'+str(round(global_step/1000))+'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
 
@@ -198,13 +197,13 @@ class Model(object):
 
     def _build_forward_Attention(self):
 
-        def embed_scaling (x):
-            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEAs])
-            b_Scal = tf.get_variable('b_Scal', shape = [1, self.WEAs])
-            affine_op = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEs]),W_Scal),b_Scal) #W1*x+b1
-            x_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEAs])
+        def embed_scaling (X):
+            W_Scal = tf.get_variable('W_Scal', initializer = np.random.normal(0.0,self.config["weights_init"]["W_Scaling_Variance"], size =  [self.WEs, self.WEAs]).astype('float32'),dtype = tf.float32)
+            
+            Scaling = tf.matmul(tf.reshape(X,[-1,self.WEs]),W_Scal) #x*W_Scal
+            X_reshaped = tf.reshape(Scaling, [self.Bs,-1,self.WEAs])
 
-            return x_reshaped
+            return X_reshaped
 
         def encoder (X,Q):
             #Compute the number of words in passage and question
@@ -231,8 +230,8 @@ class Model(object):
 	#Encoding x and q
             x_encoded = tf.add(X, encoder_x)
             q_encoded = tf.add(Q, encoder_q)
-            x_encoded = tf.cond(self.is_training,lambda: tf.nn.dropout(x_encoded,keep_prob = 1.0 - config['model']['dropout_att_encoder']), lambda: x_encoded)
-            q_encoded = tf.cond(self.is_training,lambda: tf.nn.dropout(q_encoded,keep_prob = 1.0 - config['model']['dropout_att_encoder']), lambda: q_encoded)
+            x_encoded = tf.nn.dropout(x_encoded,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_encoder'])
+            q_encoded = tf.nn.dropout(q_encoded,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_encoder'])
             return x_encoded, q_encoded
 
         def attention_layer(X, mask,X2 = None, scope=None):
@@ -263,7 +262,7 @@ class Model(object):
                 softmax = tf.nn.softmax(
                                 tf.add(
                                     tf.divide(logits, tf.sqrt(tf.cast(self.WEAs,tf.float32))),
-                                    tf.multiply(1 - mask, VERY_LOW_NUMBER)),
+                                    tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                           dim = -1)
                 #Final mask is applied
                 softmax = tf.multiply (mask,softmax)
@@ -275,7 +274,7 @@ class Model(object):
                 x_attention = tf.matmul(softmax,x3_proj)
                 x_final = tf.concat(tf.unstack(x_attention, axis = 0), axis = 2)
                 x_final = tf.reshape(tf.matmul(tf.reshape(x_final,[-1,self.WEAs]),WO),[self.Bs,-1,self.WEAs])
-                x_final_dropout = tf.cond(self.is_training,lambda: tf.nn.dropout(x_final,keep_prob = 1.0 - config['model']['dropout_att_sublayer']), lambda: x_final)
+                x_final_dropout = tf.nn.dropout(x_final,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
                 #Concatenate everything together
             return x_final_dropout
 
@@ -303,7 +302,7 @@ class Model(object):
                 nonlinear_op = tf.nn.relu(affine_op1) #Relu(W1*x+b1)
                 affine_op2 = tf.add(tf.matmul(nonlinear_op,W2),b2) #W2*Relu(W1*x+b1)+b2
                 output = tf.reshape(affine_op2, [self.Bs,-1,self.WEAs]) #Reshaping
-                output = tf.cond(self.is_training,lambda: tf.nn.dropout(output,keep_prob = 1.0 - config['model']['dropout_att_sublayer']), lambda: output)
+                output = tf.nn.dropout(output,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
             return output
 
         def one_layer (X1, X2, mask, scope):
@@ -533,7 +532,7 @@ class Model(object):
         q=[]
         y1=[]
         y2=[]
-        label_smoothing = self.config['model']['label_smoothing']
+        label_smoothing = self.config['train']['label_smoothing']
         def word2id (word): #to convert a word to its respective id
             if self.config['pre']['lower_word']:
                 word=word.lower()

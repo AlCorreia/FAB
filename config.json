@@ -31,27 +31,29 @@
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,		
-		"train": true,
 		"evaluate_dev": true,
-		"learning_rate":0.5,
-		"batch_size":10,
-		"steps":144000,
-		"steps_to_save": 2000,
 		"forget_bias":1.0,
-		"decay_steps":200,
-		"decay_rate":0.999,
 		"n_hidden": 100,
 		"char_vocabulary_size":30,
 		"input_keep_prob":0.8,
 		"share_lstm_weights":true,
-		"encoder_base_freq": 10000.0,
+		"encoder_base_freq": 10.0,
 		"multi_head_size": 4,
 		"attention_emb_size": 128,
-		"FeedForward_Hidden_Size": 512,
-		"learning_rate_AdaDelta":0.5,
-		"opt_type": "Adam",
-                "dropout_att_encoder": 0.1,
+		"FeedForward_Hidden_Size": 512
+	},
+	"train":{
+		"train": true,
+		"batch_size":14,
+		"steps":216000,
+		"steps_to_save": 2000,
+		"type": "Adam",
+		"Adam":     {"learning_rate":1.0, "decay_rate":0.5,"beta1":0.9, "beta2":0.98, "epsilon":1e-9, "WarmupSteps":4000.0},
+		"AdaDelta": {"learning_rate":0.5, "decay_steps": 200, "decay_rate": 1.0},
+		"dropout_att_encoder": 0.1,
                 "dropout_att_sublayer": 0.1,
 		"label_smoothing": 0.9
-	}
+	},
+	"weights_init":{
+		"W_Scaling_Variance": 1e-3}
 }

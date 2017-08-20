@@ -294,7 +294,7 @@ def get_batch_idxs(config, data_set):
     n = 0
     batch_idxs = set();
     #Choose randomly batch_size questions from the selected subgroup
-    while n < config['model']['batch_size']:
+    while n < config['train']['batch_size']:
         batch_idxs.add(randint(0, nQuestions-1))
         n = len(batch_idxs)
     batch_idxs =  [valid_idxs[i] for i in batch_idxs]
