@@ -102,8 +102,8 @@ class Model(object):
         if config['train']['type'] == "AdaDelta":
             self.learning_rate = tf.train.exponential_decay(learning_rate=config['train']['AdaDelta']['learning_rate'],
                                                         global_step=self.global_step,
-                                                        decay_steps=['train']['AdaDelta']['decay_steps'],
-                                                        decay_rate=['train']['AdaDelta']['decay_rate'],
+                                                        decay_steps=config['train']['AdaDelta']['decay_steps'],
+                                                        decay_rate=config['train']['AdaDelta']['decay_rate'],
                                                         staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
         elif config['train']['type'] == "Adam":
