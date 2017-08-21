@@ -357,18 +357,19 @@ class Model(object):
             q_scaled = embed_scaling(Aq)
 
         #Encoding Variables
-        with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
-            x_encoded, q_encoded = encoder (x_scaled,q_scaled)
+        if config['model']['time_encoding']:
+            with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
+                x_scaled, q_scaled = encoder (x_scaled,q_scaled)
         #Computing all attentions
-        q_1, x_1 = one_layer(q_encoded, x_encoded, mask, 'layer_0')
+        q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0')
         q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
         q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
         q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3')
         q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4')
-        _, x_y1 = one_layer(q_5, x_5, mask, 'layer_y1')
-        _, x_y2 = one_layer(q_5, x_5, mask, 'layer_y2')
-        self.yp, self.logits_y1 = y_selection(X = x_y1,scope = 'y1_sel', mask = mask['x2'])
-        self.yp2, self.logits_y2 = y_selection(X = x_y2,scope = 'y2_sel', mask = mask['x2'])
+        q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1')
+        _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2')
+        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x2'])
+        self.yp2, self.logits_y2 = y_selection(X = x_7,scope = 'y2_sel', mask = mask['x2'])
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
         
