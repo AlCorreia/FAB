@@ -206,15 +206,17 @@ class Model(object):
             return X_reshaped
 
         def encoder (X,Q):
+            low_frequency = config['model']['encoder_low_freq']
+            high_frequency = config['model']['encoder_high_freq']
             #Compute the number of words in passage and question
             size_x = tf.shape(X)[-2]
             size_q = tf.shape(Q)[-2]
             #Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x,size_q),lambda: size_x, lambda: size_q)), 1),tf.float32)
             #Create a vector with all the exponents
-            exponents = tf.divide(tf.range(self.WEAs/2),self.WEAs/2-1)
+            exponents = tf.multiply(tf.log(high_frequency/low_frequency),tf.divide(tf.range(self.WEAs/2),self.WEAs/2-1))
             #Power the base frequency by exponents
-            freq_PG = tf.expand_dims(tf.pow(1/config['model']['encoder_base_freq'],exponents),0)
+            freq_PG = tf.expand_dims(tf.multiply(1/low_frequency,tf.exp(-exponents)),0)
 
             #Compute the encoder values
             encoder_sin = tf.sin(tf.matmul(pos,freq_PG))
