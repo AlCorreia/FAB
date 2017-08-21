@@ -11,7 +11,7 @@ import pdb
 
 from read_data import get_batch_idxs
 
-VERY_LOW_NUMBER=-1e20
+VERY_LOW_NUMBER=-1e30
 
 class Model(object):
     def __init__(self, config):
@@ -100,11 +100,11 @@ class Model(object):
         # Define optimizer and train step
         # TODO: We could add the optimizer option to the config file. ADAM for now.
         if config['train']['type'] == "AdaDelta":
-            self.learning_rate = tf.train.exponential_decay(learning_rate=config['train']['AdaDelta']['learning_rate'],
-                                                        global_step=self.global_step,
-                                                        decay_steps=config['train']['AdaDelta']['decay_steps'],
-                                                        decay_rate=config['train']['AdaDelta']['decay_rate'],
-                                                        staircase=True)
+            self.learning_rate = tf.train.exponential_decay(learning_rate = config['train']['AdaDelta']['learning_rate'],
+                                                        global_step = self.global_step,
+                                                        decay_steps = config['train']['AdaDelta']['decay_steps'],
+                                                        decay_rate = config['train']['AdaDelta']['decay_rate'],
+                                                        staircase = True)
             self.optimizer = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)
         elif config['train']['type'] == "Adam":
 		#Decay_Rate is positive and therefore the - sign in this equation.
@@ -198,10 +198,10 @@ class Model(object):
     def _build_forward_Attention(self):
 
         def embed_scaling (X):
-            W_Scal = tf.get_variable('W_Scal', initializer = np.random.normal(0.0,self.config["weights_init"]["W_Scaling_Variance"], size =  [self.WEs, self.WEAs]).astype('float32'),dtype = tf.float32)
-            
-            Scaling = tf.matmul(tf.reshape(X,[-1,self.WEs]),W_Scal) #x*W_Scal
-            X_reshaped = tf.reshape(Scaling, [self.Bs,-1,self.WEAs])
+            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEAs], dtype = tf.float32)# initializer = np.random.normal(0.0,self.config["weights_init"]["W_Scaling_Variance"], size =  [self.WEs, self.WEAs]).astype('float32'),dtype = tf.float32)
+            b_Scal = tf.get_variable('b_Scal', shape = [1,self.WEAs])
+            affine_op = tf.add(tf.matmul(tf.reshape(X,[-1,self.WEs]),W_Scal),b_Scal) #x*W_Scal
+            X_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEAs])
 
             return X_reshaped
 
