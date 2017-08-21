@@ -198,12 +198,12 @@ class Model(object):
     def _build_forward_Attention(self):
 
         def embed_scaling (X):
-            W_Scal = tf.get_variable('W_Scal', shape = [self.WEs, self.WEAs], dtype = tf.float32)# initializer = np.random.normal(0.0,self.config["weights_init"]["W_Scaling_Variance"], size =  [self.WEs, self.WEAs]).astype('float32'),dtype = tf.float32)
-            b_Scal = tf.get_variable('b_Scal', shape = [1,self.WEAs])
-            affine_op = tf.add(tf.matmul(tf.reshape(X,[-1,self.WEs]),W_Scal),b_Scal) #x*W_Scal
-            X_reshaped = tf.reshape(affine_op, [self.Bs,-1,self.WEAs])
+            length_X = X.get_shape()[1]
+            X = tf.expand_dims(X,2)
+            X.set_shape([self.Bs,length_X,1,self.WEs])
+            affine_op = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, name = 'Word2Vec_Scaling'))
 
-            return X_reshaped
+            return affine_op
 
         def encoder (X,Q):
             low_frequency = config['model']['encoder_low_freq']
@@ -236,28 +236,36 @@ class Model(object):
             q_encoded = tf.nn.dropout(q_encoded,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_encoder'])
             return x_encoded, q_encoded
 
-        def attention_layer(X, mask,X2 = None, scope=None):
+        def attention_layer(X1, mask,X2 = None, scope=None):
             #Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
             with tf.variable_scope(scope):
                 #In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
-                WQ = tf.get_variable(name = 'WQ', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
-                WK = tf.get_variable(name = 'WK', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
-                WV = tf.get_variable(name = 'WV', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
-                WO = tf.get_variable(name = 'WO', shape = [self.WEAs,self.WEAs], dtype = tf.float32)
-                
+                length_X1 = X1.get_shape()[1]
+                X1 = tf.expand_dims(X1,2)
+                X1.set_shape([self.Bs,length_X1,1,self.WEAs])
+                if X2 is None:
+                    length_X2 = length_X1
+                    QKV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*3, kernel_size = 1, strides = 1, name = 'QKV_Comp'))
+                    Q, K, V = tf.split(QKV, num_or_size_splits = [self.WEAs,self.WEAs,self.WEAs], axis = 2)
+                else:
+                    length_X2 = X2.get_shape()[1]
+                    KV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*2, kernel_size = 1, strides = 1, name = 'KV_Comp'))
+                    K, V = tf.split(KV, num_or_size_splits = [self.WEAs,self.WEAs], axis = 2)
+                    X2 = tf.expand_dims(X2,2)
+                    X2.set_shape([self.Bs,length_X2,1,self.WEAs])
+                    Q = tf.squeeze(tf.layers.conv2d(X2, filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Q_Comp'))
+                    X2 = tf.squeeze(X2)
+                    X2.set_shape([self.Bs,length_X2,self.WEAs])
+                X1 = tf.squeeze(X1)
+                X1.set_shape([self.Bs,length_X1,self.WEAs])
                 #W_sym = WQ_EigVec*EigenVal*EigVec
                 # x*EigVec
 
-                x1_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),WQ),[self.Bs,-1,self.WEAs])
-                # x*EigVec is split into multi_head_size smaller matrices
-                x1_proj = tf.split(x1_proj,num_or_size_splits = self.MHs, axis = 2)
-                # x*EigVec*EigVal computed
-                if X2 is None:
-                    X2 = X
+                Q = tf.split(Q, num_or_size_splits =  self.MHs, axis = 2)
+                K = tf.split(K, num_or_size_splits =  self.MHs, axis = 2)
+                V = tf.split(V, num_or_size_splits =  self.MHs, axis = 2)
 
-                x2_proj = tf.reshape(tf.matmul(tf.reshape(X2,[-1,self.WEAs]),WK),[self.Bs,-1,self.WEAs])
-                x2_proj = tf.split(x2_proj,num_or_size_splits =  self.MHs, axis = 2)
-                logits = tf.matmul(x2_proj,tf.transpose(x1_proj,[0,1,3,2]))
+                logits = tf.matmul(Q,tf.transpose(K,[0,1,3,2]))
 
                 #(x*EigVec) * (x*EigVec*EigVal)' 
                 #Sofmax with masking
@@ -270,12 +278,11 @@ class Model(object):
                 softmax = tf.multiply (mask,softmax)
                 #Computed the new x vector accoring to weights from softmax
                 
-                x3_proj = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),WK),[self.Bs,-1,self.WEAs])
-                x3_proj = tf.split(x3_proj,num_or_size_splits =  self.MHs, axis = 2)
                 #Because of multihead attention, WV must be split into multi_head_size smaller matrices
-                x_attention = tf.matmul(softmax,x3_proj)
-                x_final = tf.concat(tf.unstack(x_attention, axis = 0), axis = 2)
-                x_final = tf.reshape(tf.matmul(tf.reshape(x_final,[-1,self.WEAs]),WO),[self.Bs,-1,self.WEAs])
+                x_attention = tf.matmul(softmax,V)
+                x_attention_concat = tf.concat(tf.unstack(x_attention, axis = 0, num = self.MHs), axis = 2)
+                x_attention_concat.set_shape([self.Bs, length_X2, self.WEAs])
+                x_final = tf.squeeze(tf.layers.conv2d(tf.expand_dims(x_attention_concat,2),filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Att_Comp'))
                 x_final_dropout = tf.nn.dropout(x_final,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
                 #Concatenate everything together
             return x_final_dropout
@@ -291,28 +298,28 @@ class Model(object):
 				[1,2,0])
             return normalized_x
 
-        def FeedForward_NN(x,scope = None):
+        def FeedForward_NN(X,scope = None):
             #Starting variables
             with tf.variable_scope(scope):
-                W1 = tf.get_variable('W1', shape = [self.WEAs, self.FFHs])
-                b1 = tf.get_variable('b1', shape = [1, self.FFHs])
-                W2 = tf.get_variable('W2', shape = [self.FFHs, self.WEAs])
-                b2 = tf.get_variable('b2', shape = [1, self.WEAs])
-                
-                #Computation of #W2*Relu(W1*x+b1)+b2
-                affine_op1 = tf.add(tf.matmul(tf.reshape(x,[-1,self.WEAs]),W1),b1) #W1*x+b1
-                nonlinear_op = tf.nn.relu(affine_op1) #Relu(W1*x+b1)
-                affine_op2 = tf.add(tf.matmul(nonlinear_op,W2),b2) #W2*Relu(W1*x+b1)+b2
-                output = tf.reshape(affine_op2, [self.Bs,-1,self.WEAs]) #Reshaping
+                length_X = X.get_shape()[1]
+                X = tf.expand_dims(X,2)
+                X.set_shape([self.Bs,length_X,1,self.WEAs])
+                #Affine operation followed by Relu. It is done by a convolution and it is the same as X*W+b
+                affine_op = tf.layers.conv2d(X, filters = self.FFHs, kernel_size = 1, strides = 1, use_bias = True, activation = tf.nn.relu, name = 'affine_op_1')
+                X = tf.squeeze(X)
+                X.set_shape([self.Bs,length_X,self.WEAs])
+                #Second affine oepration. It is done by a convolution and it is the same as X*W+b
+                output = tf.squeeze(tf.layers.conv2d(affine_op, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, name = 'affine_op_2'))
+                #Apply Dropout
                 output = tf.nn.dropout(output,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
             return output
 
         def one_layer (X1, X2, mask, scope):
             with tf.variable_scope(scope):
-                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X = X1, mask = mask['x1x1'], scope = 'x1x1')))
-                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X = X2, mask = mask['x2x2'], scope = 'x2x2')))
+                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')))
+                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')))
                 FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')))
-                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')))
+                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')))
                 FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')))
             return FF_X1X1, FF_X2X2
 
