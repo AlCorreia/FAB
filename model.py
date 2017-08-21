@@ -287,15 +287,19 @@ class Model(object):
                 #Concatenate everything together
             return x_final_dropout
 
-        def layer_normalization (x, gain = 1.0):
-            mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
-            var += 1e-30 #to avoid NaN, if variance = 0
-            normalized_x = tf.transpose(
+        def layer_normalization (x, gain = 1.0,reuse = False):
+            with tf.variable_scope("layer_normalization", reuse=reuse):
+                W_Scale = tf.get_variable('weight',shape = [self.WEAs], dtype = tf.float32, initializer = tf.ones_initializer())
+                b_Scale = tf.get_variable('bias',shape = [self.WEAs], dtype = tf.float32, initializer = tf.zeros_initializer())
+                mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
+                var += 1e-30 #to avoid NaN, if variance = 0
+                normalized_x = tf.transpose(
                                 tf.multiply(
                                     tf.add(mean,
                                         tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
                                     tf.divide(gain,var)),
-				[1,2,0])
+				    [1,2,0])
+                normalized_x = normalized_x*W_Scale+b_Scale
             return normalized_x
 
         def FeedForward_NN(X,scope = None):
@@ -316,11 +320,11 @@ class Model(object):
 
         def one_layer (X1, X2, mask, scope):
             with tf.variable_scope(scope):
-                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')))
-                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')))
-                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')))
-                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')))
-                FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')))
+                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')), reuse = False)
+                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')), reuse = True)
+                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')), reuse = True)
+                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')), reuse = True)
+                FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')), reuse = True)
             return FF_X1X1, FF_X2X2
 
         def y_selection(X, mask, scope):
@@ -361,6 +365,8 @@ class Model(object):
             with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
         #Computing all attentions
+        q_scaled = layer_normalization(q_scaled)
+        x_scaled = layer_normalization(x_scaled)
         q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0')
         q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
         q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
