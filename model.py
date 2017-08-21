@@ -365,8 +365,6 @@ class Model(object):
             with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
         #Computing all attentions
-        q_scaled = layer_normalization(q_scaled)
-        x_scaled = layer_normalization(x_scaled)
         q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0')
         q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
         q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
