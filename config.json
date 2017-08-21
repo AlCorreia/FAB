@@ -38,7 +38,7 @@
 		"input_keep_prob":0.8,
 		"share_lstm_weights":true,
 		"encoder_low_freq":1.0,
-		"encoder_high_freq": 10000.0,
+		"encoder_high_freq": 10.0,
 		"multi_head_size": 4,
 		"attention_emb_size": 128,
 		"FeedForward_Hidden_Size": 512
@@ -56,5 +56,5 @@
 		"label_smoothing": 0.9
 	},
 	"weights_init":{
-		"W_Scaling_Variance": 1}
+		"W_Scaling_Variance": "NOT_WORKING"}
 }
