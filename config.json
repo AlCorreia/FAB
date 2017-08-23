@@ -45,6 +45,7 @@
                 "time_encoding": true
 	},
 	"train":{
+		"check_available_memory":  false,
 		"train": true,
 		"batch_size":14,
 		"steps":288000,
@@ -57,5 +58,9 @@
 		"label_smoothing": 0.9
 	},
 	"weights_init":{
-		"W_Scaling_Variance": "NOT_WORKING"}
+		"W_Scaling_Variance": "NOT_WORKING"
+	},
+	"model_options":{"norm_layer":false,
+			"symmetric_layers": true
+				}
 }
