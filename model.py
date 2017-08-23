@@ -287,10 +287,8 @@ class Model(object):
                 #Concatenate everything together
             return x_final_dropout
 
-        def layer_normalization (x, gain = 1.0,reuse = False):
-            with tf.variable_scope("layer_normalization", reuse=reuse):
-                W_Scale = tf.get_variable('weight',shape = [self.WEAs], dtype = tf.float32, initializer = tf.ones_initializer())
-                b_Scale = tf.get_variable('bias',shape = [self.WEAs], dtype = tf.float32, initializer = tf.zeros_initializer())
+        def layer_normalization (x, gain = 1.0,scope = None):
+            with tf.variable_scope(scope):
                 mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
                 var += 1e-30 #to avoid NaN, if variance = 0
                 normalized_x = tf.transpose(
@@ -299,7 +297,11 @@ class Model(object):
                                         tf.transpose(x,[2,0,1])), #Transpose for add and multiply operations
                                     tf.divide(gain,var)),
 				    [1,2,0])
-                normalized_x = normalized_x*W_Scale+b_Scale
+            #In Google Attention Model original code, there are these weights. By now, they were turned off in FAB.
+                if self.config['model_options']['norm_layer']:
+                    W_Scale = tf.get_variable('weight',shape = [self.WEAs], dtype = tf.float32, initializer = tf.ones_initializer())
+                    b_Scale = tf.get_variable('bias',shape = [self.WEAs], dtype = tf.float32, initializer = tf.zeros_initializer())
+                    normalized_x = normalized_x*W_Scale+b_Scale
             return normalized_x
 
         def FeedForward_NN(X,scope = None):
@@ -320,12 +322,18 @@ class Model(object):
 
         def one_layer (X1, X2, mask, scope):
             with tf.variable_scope(scope):
-                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')), reuse = False)
-                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')), reuse = True)
-                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')), reuse = True)
-                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')), reuse = True)
-                FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')), reuse = True)
-            return FF_X1X1, FF_X2X2
+                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')), scope = 'norm_x1x1')
+                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')), scope =  'norm_FF_11')
+                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')), scope = 'norm_x2x2')
+                if config['model_options']['symmetric_layers']:
+                    FF_X2X2 = layer_normalization(tf.add(att_layer_X2X2,FeedForward_NN(att_layer_X2X2,'FF_22')), scope = 'norm_FF_22')
+                    att_layer_X1X2 = layer_normalization(tf.add(FF_X2X2,attention_layer(X1 = FF_X1X1, X2 = FF_X2X2, mask = mask['x2x1'], scope = 'x2x1')), scope = 'norm_x2x1')
+                    att_layer_X2X1 = layer_normalization(tf.add(FF_X1X1,attention_layer(X1 = FF_X2X2, X2 = FF_X1X1, mask = mask['x1x2'], scope = 'x1x2')), scope = 'norm_x1x2')
+                    return att_layer_X2X1, att_layer_X1X2
+                else:
+                    att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')), scope = 'norm_x2x1')
+                    FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')), scope = 'norm_FF_22')
+                    return FF_X1X1, FF_X2X2
 
         def y_selection(X, mask, scope):
             with tf.variable_scope(scope):
@@ -343,6 +351,7 @@ class Model(object):
         mask['x1x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.q,1))),tf.float32)
         mask['x2x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.x,1))),tf.float32)
         mask['x2x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.q,1))),tf.float32)
+        mask['x1x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.x,1))),tf.float32)
         with tf.variable_scope("word_emb"), tf.device("/cpu:0"):
             # TODO: I am not sure that having a config variable for this is the best solution
             # TODO: Save the embedding matrix somewhere other than the config file
@@ -583,8 +592,12 @@ class Model(object):
         
         self.answer=[y1,y2]
         #padding
-        q, _ = padding(q)
-        x, new_seq_y = padding(x, label_smoothing = label_smoothing)
+        if self.config['train']['check_available_memory']:
+            x, new_seq_y = padding(x, label_smoothing = label_smoothing,  max_size = self.config['pre']['max_paragraph_size'])
+            q, _ = padding(q, max_size = self.config['pre']['max_question_size'])
+        else:
+            x, new_seq_y = padding(x, label_smoothing = label_smoothing)
+            q, _ = padding(q)
         y1_new = new_seq_y
         y2_new = np.copy(new_seq_y)
         for i in range(self.Bs):
