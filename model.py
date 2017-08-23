@@ -320,20 +320,26 @@ class Model(object):
                 output = tf.nn.dropout(output,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
             return output
 
-        def one_layer (X1, X2, mask, scope):
+        def one_layer (Q, X, mask, scope, switch = False): 
+            if switch:
+                X1 = X
+                X2 = Q
+                X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq' #Defining masks and scopes
+                
+            else:
+                X1 = Q
+                X2 = X
+                X1X1, X2X2, X2X1, X1X2 = 'qq', 'xx', 'xq', 'qx' #Defining masks and scopes
             with tf.variable_scope(scope):
-                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask['x1x1'], scope = 'x1x1')), scope = 'norm_x1x1')
-                FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF_11')), scope =  'norm_FF_11')
-                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask['x2x2'], scope = 'x2x2')), scope = 'norm_x2x2')
-                if config['model_options']['symmetric_layers']:
-                    FF_X2X2 = layer_normalization(tf.add(att_layer_X2X2,FeedForward_NN(att_layer_X2X2,'FF_22')), scope = 'norm_FF_22')
-                    att_layer_X1X2 = layer_normalization(tf.add(FF_X2X2,attention_layer(X1 = FF_X1X1, X2 = FF_X2X2, mask = mask['x2x1'], scope = 'x2x1')), scope = 'norm_x2x1')
-                    att_layer_X2X1 = layer_normalization(tf.add(FF_X1X1,attention_layer(X1 = FF_X2X2, X2 = FF_X1X1, mask = mask['x1x2'], scope = 'x1x2')), scope = 'norm_x1x2')
-                    return att_layer_X2X1, att_layer_X1X2
+                att_layer_X1X1 = layer_normalization(tf.add(X1, attention_layer(X1 = X1, mask = mask[X1X1], scope = X1X1)), scope = 'norm_'+X1X1)
+                output_1 = FF_X1X1 = layer_normalization(tf.add(att_layer_X1X1, FeedForward_NN(att_layer_X1X1,'FF'+X1X1)), scope =  'norm_FF_'+X1X1)
+                att_layer_X2X2 = layer_normalization(tf.add(X2, attention_layer(X1 = X2, mask = mask[X2X2], scope = X2X2)), scope = 'norm_'+X2X2)
+                att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask[X2X1], scope = X2X1)), scope = 'norm_'+X2X1)
+                output_2 = FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_'+X2X2)), scope = 'norm_FF_'+X2X2)
+                if switch:
+                    return output_2, output_1
                 else:
-                    att_layer_X1X2 = layer_normalization(tf.add(att_layer_X2X2,attention_layer(X1 = FF_X1X1, X2 = att_layer_X2X2, mask = mask['x2x1'], scope = 'x2x1')), scope = 'norm_x2x1')
-                    FF_X2X2 = layer_normalization(tf.add(att_layer_X1X2,FeedForward_NN(att_layer_X1X2,'FF_22')), scope = 'norm_FF_22')
-                    return FF_X1X1, FF_X2X2
+                    return output_1, output_2
 
         def y_selection(X, mask, scope):
             with tf.variable_scope(scope):
@@ -346,12 +352,12 @@ class Model(object):
         config = self.config
         #Mask matrices
         mask = {}
-        mask['x1'] = tf.cast(tf.sign(self.q),tf.float32)
-        mask['x2'] = tf.cast(tf.sign(self.x),tf.float32)
-        mask['x1x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.q,1))),tf.float32)
-        mask['x2x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.x,1))),tf.float32)
-        mask['x2x1'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.q,1))),tf.float32)
-        mask['x1x2'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.x,1))),tf.float32)
+        mask['q'] = tf.cast(tf.sign(self.q),tf.float32)
+        mask['x'] = tf.cast(tf.sign(self.x),tf.float32)
+        mask['qq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.q,1))),tf.float32)
+        mask['xx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.x,1))),tf.float32)
+        mask['xq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.q,1))),tf.float32)
+        mask['qx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.x,1))),tf.float32)
         with tf.variable_scope("word_emb"), tf.device("/cpu:0"):
             # TODO: I am not sure that having a config variable for this is the best solution
             # TODO: Save the embedding matrix somewhere other than the config file
@@ -374,15 +380,24 @@ class Model(object):
             with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
         #Computing all attentions
-        q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0')
-        q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1')
-        q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2')
-        q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3')
-        q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4')
-        q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1')
-        _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2')
-        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x2'])
-        self.yp2, self.logits_y2 = y_selection(X = x_7,scope = 'y2_sel', mask = mask['x2'])
+        if config['model_options']['switching_model']:
+            q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0', switch = False)
+            q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1', switch = True)
+            q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2', switch = False)
+            q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = True)
+            q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
+            q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = True)
+            _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2', switch = False)
+        else:
+            q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0', switch = False)
+            q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1', switch = False)
+            q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2', switch = False)
+            q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = False)
+            q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
+            q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = False)
+            _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2', switch = False)
+        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x'])
+        self.yp2, self.logits_y2 = y_selection(X = x_7,scope = 'y2_sel', mask = mask['x'])
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
         
