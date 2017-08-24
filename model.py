@@ -64,14 +64,14 @@ class Model(object):
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
         self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder(tf.float32, [None, self.WEs], name='new_emb_mat')
-        
+
         #Masks
         self.x_mask = tf.sign(self.x)
         self.q_mask = tf.sign(self.q)
-        
+
         self.max_size_x = tf.shape(self.x)
         self.max_size_q = tf.shape(self.q)
-        
+
         # Redefine some parameters based on the actual tensor dimensions
         self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
@@ -87,7 +87,7 @@ class Model(object):
         # Loss outputs
         self.loss = None
 
-        #Values for computing EM and F1 for dev 
+        #Values for computing EM and F1 for dev
         self.EM_dev = []
         self.F1_dev = []
 
@@ -144,6 +144,9 @@ class Model(object):
         self.writer = tf.summary.FileWriter(self.directory + 'train',
                                             self.sess.graph)
 
+        self.dev_writer = tf.summary.FileWriter(self.directory + 'dev',
+                                                self.sess.graph)
+
 
     def train(self, batch_idxs, dataset):
         """ Runs a train step given the input X and the correct label y.
@@ -166,7 +169,7 @@ class Model(object):
         self.writer.add_summary(summary, global_step)
         self.writer.add_summary(summary_F1, global_step)
         self.writer.add_summary(summary_EM, global_step)
-        # Regularly save the models parameters      
+        # Regularly save the models parameters
         if global_step % self.config['train']['steps_to_save'] == 0:
             self.saver.save(self.sess, self.directory + 'ckpt/'+str(round(global_step/1000))+'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
@@ -183,12 +186,12 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
 
-        summary, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index], feed_dict=feed_dict)
+        summary, max_x, max_q, Start_Index, End_Index, global_step = self.sess.run([self.summary,self.max_size_x, self.max_size_q,self.Start_Index,self.End_Index,self.global_step], feed_dict=feed_dict)
         # Write the results to Tensorboard
-        EM_dev, F1_dev = EM_and_F1(self.answer,[Start_Index,End_Index])
+        EM_dev, F1_dev = EM_and_F1(self.answer, [Start_Index,End_Index])
         self.EM_dev.append(EM_dev)
         self.F1_dev.append(F1_dev)
-
+        self.dev_writer.add_summary(summary, global_step=global_step)
 
 
     def _load(self): #To load a checkpoint
@@ -267,7 +270,7 @@ class Model(object):
 
                 logits = tf.matmul(Q,tf.transpose(K,[0,1,3,2]))
 
-                #(x*EigVec) * (x*EigVec*EigVal)' 
+                #(x*EigVec) * (x*EigVec*EigVal)'
                 #Sofmax with masking
                 softmax = tf.nn.softmax(
                                 tf.add(
@@ -277,7 +280,7 @@ class Model(object):
                 #Final mask is applied
                 softmax = tf.multiply (mask,softmax)
                 #Computed the new x vector accoring to weights from softmax
-                
+
                 #Because of multihead attention, WV must be split into multi_head_size smaller matrices
                 x_attention = tf.matmul(softmax,V)
                 x_attention_concat = tf.concat(tf.unstack(x_attention, axis = 0, num = self.MHs), axis = 2)
@@ -320,12 +323,12 @@ class Model(object):
                 output = tf.nn.dropout(output,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
             return output
 
-        def one_layer (Q, X, mask, scope, switch = False): 
+        def one_layer (Q, X, mask, scope, switch = False):
             if switch:
                 X1 = X
                 X2 = Q
                 X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq' #Defining masks and scopes
-                
+
             else:
                 X1 = Q
                 X2 = X
@@ -347,7 +350,7 @@ class Model(object):
                 logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
                 output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
             return output, logits
-    
+
 
         config = self.config
         #Mask matrices
@@ -400,7 +403,7 @@ class Model(object):
         self.yp2, self.logits_y2 = y_selection(X = x_7,scope = 'y2_sel', mask = mask['x'])
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
-        
+
     def _build_forward(self):
         """
             Builds the model's feedforward network.
@@ -455,7 +458,7 @@ class Model(object):
                                                                   sequence_length=x_len,
                                                                   dtype='float',
                                                                   scope='h1')
-            
+
             h = tf.concat([fw_h, bw_h], axis = 2)  # [Bs, Ps, 2Hn]
             self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
@@ -531,7 +534,7 @@ class Model(object):
             self.yp2 = yp2
             self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
             self.End_Index = tf.argmax(self.logits_y2, axis=-1)
-        
+
 
     def _build_loss(self):
         """
@@ -604,7 +607,7 @@ class Model(object):
             x.append(xi)
             y1.append([y[0] for y in yi]) # Get all the first indices in the sequence
             y2.append([y[1]-1 for y in yi]) # Get all the second indices... and correct for -1
-        
+
         self.answer=[y1,y2]
         #padding
         if self.config['train']['check_available_memory']:
@@ -714,7 +717,7 @@ def EM_and_F1(answer,answer_est):
     EM=[]
     F1=[]
     y1_est,y2_est = answer_est
-    y1,y2 = answer 
+    y1,y2 = answer
     for i in range(len(y1_est)):
         EM_i = []
         F1_i = []
