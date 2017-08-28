@@ -207,7 +207,7 @@ class Model(object):
             if self.config['model_options']['word2vec_matrix_scaling']:
                 X = tf.expand_dims(X,2)
                 X.set_shape([self.Bs,length_X,1,self.WEs])
-                X = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, name = 'Word2Vec_Scaling')) #XW+B
+                X = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, reuse = True, name = "conv2d")) #XW+B
             #If the word2vec vector is scaled by a vector
             elif self.config['model_options']['word2vec_vector_scaling']:
                 weights = tf.get_variable('weights', shape = [self.WEAs])
@@ -408,6 +408,10 @@ class Model(object):
             if self.config['model_options']['word2vec_vector_scaling']:
                 weigths = tf.get_variable('weights', shape = self.WEAs)
                 bias = tf.get_variable('bias', shape = self.WEAs, initializer = tf.zeros_initializer())
+            elif self.config['model_options']['word2vec_matrix_scaling']:
+                with tf.variable_scope('conv2d'):
+                    weigths = tf.get_variable('kernel', shape = [1,1,self.WEs,self.WEAs])
+                    bias = tf.get_variable('bias', shape = [self.WEAs])
             scope.reuse_variables()
             x_scaled = embed_scaling(Ax)
             q_scaled = embed_scaling(Aq)
