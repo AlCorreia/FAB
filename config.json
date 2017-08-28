@@ -10,7 +10,8 @@
 		"Comment_":"#Directories info.",
 		"source_dir":"./data/squad/",
 		"target_dir":"./",
-		"out_dir":"./"
+		"dir":"./",
+		"plots":"./plots/"
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
@@ -28,6 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
+                "name": "1",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,		
@@ -49,12 +51,12 @@
 		"train": true,
 		"batch_size":30,
 		"steps":288000,
-		"steps_to_save": 4000,
-		"type": "AdaDelta",
-		"Adam":     {"learning_rate":1.0, "decay_rate":0.5,"beta1":0.9, "beta2":0.98, "epsilon":1e-9, "WarmupSteps":4000.0},
-		"AdaDelta": {"learning_rate":0.5, "decay_steps": 200, "decay_rate": 1.0},
-		"dropout_att_encoder": 0.1,
-                "dropout_att_sublayer": 0.1,
+		"steps_to_save": 2000,
+		"type": "Adam",
+		"Adam":     {"learning_rate":1e-4, "decay_rate":0,"beta1":0.95, "beta2":0.99, "epsilon":1e-9, "WarmupSteps":7200.0, "constant_LR":true},
+		"AdaDelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
+		"dropout_att_encoder": 0.15,
+                "dropout_att_sublayer": 0.15,
 		"label_smoothing": 0.9
 	},
 	"weights_init":{
@@ -62,6 +64,9 @@
 	},
 	"model_options":{"norm_layer":false,
 			"symmetric_layers": "NOT_IMPLEMENTED",
-			"switching_model":true
+			"switching_model":false,
+			"y2_sel":"extra_layer",
+                        "word2vec_matrix_scaling": true,
+                        "word2vec_vector_scaling": false
 				}
 }

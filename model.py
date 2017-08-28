@@ -27,7 +27,8 @@ class Model(object):
         self.config = config
         # Define the directory where the results will be saved
         # TODO: Define a better convention for directories names
-        self.directory = config['directories']['out_dir']
+        self.directory = config['directories']['dir']
+        self.dir_plots = config['directories']['plots']
         # Define global step and learning rate decay
         self.global_step = tf.Variable(0, trainable=False)
         # Learning rate with exponential decay
@@ -111,7 +112,7 @@ class Model(object):
             self.learning_rate = config['train']['Adam']['learning_rate']*tf.multiply(
                                     tf.reduce_min([tf.pow(tf.cast(self.global_step,tf.float32),-self.config['train']['Adam']['decay_rate']), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(config['train']['Adam']['WarmupSteps'],tf.float32),-config['train']['Adam']['decay_rate']-1.0))]),
                                     tf.pow(tf.cast(self.WEAs,tf.float32),-0.5))
-            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate, beta1 = config['train']['Adam']['beta1'], beta2 = config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
+            self.optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate if config['train']['Adam']['constant_LR'] else self.config['train']['Adam']['learning_rate'], beta1 = config['train']['Adam']['beta1'], beta2 = config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
 
         #not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
@@ -141,10 +142,10 @@ class Model(object):
         else:
                 self._load()
         # Add a writer object to log the models's progress in the "train" folder
-        self.writer = tf.summary.FileWriter(self.directory + 'train',
+        self.writer = tf.summary.FileWriter(self.dir_plots + 'train',
                                             self.sess.graph)
 
-        self.dev_writer = tf.summary.FileWriter(self.directory + 'dev',
+        self.dev_writer = tf.summary.FileWriter(self.dir_plots + 'dev',
                                                 self.sess.graph)
 
 
@@ -201,12 +202,19 @@ class Model(object):
     def _build_forward_Attention(self):
 
         def embed_scaling (X):
-            length_X = X.get_shape()[1]
-            X = tf.expand_dims(X,2)
-            X.set_shape([self.Bs,length_X,1,self.WEs])
-            affine_op = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, name = 'Word2Vec_Scaling'))
-
-            return affine_op
+            length_X = X.get_shape()[1] #number of words in the passage
+            #If the word2vec vector is scaled by a matrix
+            if self.config['model_options']['word2vec_matrix_scaling']:
+                X = tf.expand_dims(X,2)
+                X.set_shape([self.Bs,length_X,1,self.WEs])
+                X = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, name = 'Word2Vec_Scaling')) #XW+B
+            #If the word2vec vector is scaled by a vector
+            elif self.config['model_options']['word2vec_vector_scaling']:
+                weights = tf.get_variable('weights', shape = [self.WEAs])
+                bias = tf.get_variable('bias', shape = [self.WEAs])
+                X = tf.slice(X,[0,0,0],[self.Bs,tf.shape(X)[1],self.WEAs]) #slice the first WEAs columns
+                X = tf.add(tf.multiply(X,weights), bias) #xi = xi*w+b
+            return X
 
         def encoder (X,Q):
             low_frequency = config['model']['encoder_low_freq']
@@ -240,17 +248,19 @@ class Model(object):
             return x_encoded, q_encoded
 
         def attention_layer(X1, mask,X2 = None, scope=None):
-            #Self-Attention is defined as:  softmax(X*W_sym*X')*X*WV
+            #Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None 
             with tf.variable_scope(scope):
-                #In order to get a symmetric matrix W_V, only its eigenvectors and eigenvalues are variables.
+                
                 length_X1 = X1.get_shape()[1]
                 X1 = tf.expand_dims(X1,2)
                 X1.set_shape([self.Bs,length_X1,1,self.WEAs])
                 if X2 is None:
                     length_X2 = length_X1
+                    #(SELF ATTENTION) If X2 is None Compute Q = X1*WQ, K = X1*WK, V=X1*WV
                     QKV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*3, kernel_size = 1, strides = 1, name = 'QKV_Comp'))
                     Q, K, V = tf.split(QKV, num_or_size_splits = [self.WEAs,self.WEAs,self.WEAs], axis = 2)
                 else:
+                    #(CROSS ATTENTION) If X2 is not none, compute Q = X1*WQ, K = X2*WK, V=X1*WV
                     length_X2 = X2.get_shape()[1]
                     KV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*2, kernel_size = 1, strides = 1, name = 'KV_Comp'))
                     K, V = tf.split(KV, num_or_size_splits = [self.WEAs,self.WEAs], axis = 2)
@@ -261,33 +271,32 @@ class Model(object):
                     X2.set_shape([self.Bs,length_X2,self.WEAs])
                 X1 = tf.squeeze(X1)
                 X1.set_shape([self.Bs,length_X1,self.WEAs])
-                #W_sym = WQ_EigVec*EigenVal*EigVec
-                # x*EigVec
 
+                #Split Q, K, V for multi-head attention
                 Q = tf.split(Q, num_or_size_splits =  self.MHs, axis = 2)
                 K = tf.split(K, num_or_size_splits =  self.MHs, axis = 2)
                 V = tf.split(V, num_or_size_splits =  self.MHs, axis = 2)
 
-                logits = tf.matmul(Q,tf.transpose(K,[0,1,3,2]))
+                logits = tf.matmul(Q,tf.transpose(K,[0,1,3,2])) #Compute transpose of K for multiplyting Q*K^T
 
-                #(x*EigVec) * (x*EigVec*EigVal)'
-                #Sofmax with masking
+                #Sofmax in each head of the splitted Q and K softmax(Q*K^T):
                 softmax = tf.nn.softmax(
                                 tf.add(
                                     tf.divide(logits, tf.sqrt(tf.cast(self.WEAs,tf.float32))),
                                     tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                           dim = -1)
                 #Final mask is applied
-                softmax = tf.multiply (mask,softmax)
-                #Computed the new x vector accoring to weights from softmax
+                softmax = tf.multiply (mask,softmax) 
 
                 #Because of multihead attention, WV must be split into multi_head_size smaller matrices
-                x_attention = tf.matmul(softmax,V)
-                x_attention_concat = tf.concat(tf.unstack(x_attention, axis = 0, num = self.MHs), axis = 2)
-                x_attention_concat.set_shape([self.Bs, length_X2, self.WEAs])
-                x_final = tf.squeeze(tf.layers.conv2d(tf.expand_dims(x_attention_concat,2),filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Att_Comp'))
-                x_final_dropout = tf.nn.dropout(x_final,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
+                x_attention = tf.matmul(softmax,V) #softmax(Q*K^T)*V
                 #Concatenate everything together
+                x_attention_concat = tf.concat(tf.unstack(x_attention, axis = 0, num = self.MHs), axis = 2) 
+                x_attention_concat.set_shape([self.Bs, length_X2, self.WEAs])
+                #Compute softmax(Q*K^T)*V*WO
+                x_final = tf.squeeze(tf.layers.conv2d(tf.expand_dims(x_attention_concat,2),filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Att_Comp'))
+                #Add Dropout
+                x_final_dropout = tf.nn.dropout(x_final,keep_prob = 1.0 - tf.to_float(self.is_training)*config['train']['dropout_att_sublayer'])
             return x_final_dropout
 
         def layer_normalization (x, gain = 1.0,scope = None):
@@ -344,11 +353,33 @@ class Model(object):
                 else:
                     return output_1, output_2
 
-        def y_selection(X, mask, scope):
+        def y1_selection(X, mask, scope):
             with tf.variable_scope(scope):
                 W = tf.get_variable('W', shape = [self.WEAs, 1], dtype = tf.float32)
                 logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
                 output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
+            return output, logits
+
+        def y2_selection(Q, X, y1_softmax, mask, scope):
+            with tf.variable_scope(scope):
+                #y2 logits computed with one extra layer after y1 computation: x*W
+                if self.config['model_options']['y2_sel'] == "extra_layer":
+                    q_y1, x_y1 = one_layer(Q, X, mask, 'layer_y2', switch = False)
+                    W = tf.get_variable('W', shape = [self.WEAs, 1], dtype = tf.float32)
+                    logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
+                    output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+                #y2 logits computed using concat([x,self_x,cross_x])*W
+                elif self.config['model_options']['y2_sel'] == "split_layer":
+                    self_attention_Q = layer_normalization(tf.add(Q, attention_layer(X1 = Q, mask = mask['qq'], scope = 'qq')), scope = 'norm_qq')
+                    FF_QQ = layer_normalization(tf.add(self_attention_Q, FeedForward_NN(self_attention_Q,'FF_qq')), scope =  'norm_FF_qq')
+                    self_attention_X = layer_normalization(attention_layer(X1 = X, mask = mask['xx'], scope = 'xx'), scope = 'norm_xx')
+                    cross_attention_X = layer_normalization(attention_layer(X1 = FF_QQ, X2 = X, mask = mask['xq'], scope = 'xq'), scope = 'norm_xq')
+                    FF_self_X = layer_normalization(FeedForward_NN(self_attention_X,'FF_xx_self'), scope =  'norm_FF_xx_self')
+                    FF_cross_X = layer_normalization(FeedForward_NN(cross_attention_X,'FF_xx_cross'), scope =  'norm_FF_xx_cross')
+                    W = tf.get_variable('W', shape = [self.WEAs*3, 1], dtype = tf.float32)
+                    concat_all = tf.concat([X, FF_self_X, FF_cross_X], axis = 2)
+                    logits = tf.reshape(tf.matmul(tf.reshape(concat_all,[-1,self.WEAs*3]),W), [self.Bs,-1]) #W*x
+                    output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
             return output, logits
 
 
@@ -374,8 +405,11 @@ class Model(object):
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
 
         with tf.variable_scope('Scaling') as scope, tf.device('/cpu:0'):
-            x_scaled = embed_scaling(Ax)
+            if self.config['model_options']['word2vec_vector_scaling']:
+                weigths = tf.get_variable('weights', shape = self.WEAs)
+                bias = tf.get_variable('bias', shape = self.WEAs, initializer = tf.zeros_initializer())
             scope.reuse_variables()
+            x_scaled = embed_scaling(Ax)
             q_scaled = embed_scaling(Aq)
 
         #Encoding Variables
@@ -390,7 +424,6 @@ class Model(object):
             q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = True)
             q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
             q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = True)
-            _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2', switch = False)
         else:
             q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0', switch = False)
             q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1', switch = False)
@@ -398,9 +431,8 @@ class Model(object):
             q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = False)
             q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
             q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = False)
-            _, x_7 = one_layer(q_6, x_6, mask, 'layer_y2', switch = False)
-        self.yp, self.logits_y1 = y_selection(X = x_6,scope = 'y1_sel', mask = mask['x'])
-        self.yp2, self.logits_y2 = y_selection(X = x_7,scope = 'y2_sel', mask = mask['x'])
+        self.yp, self.logits_y1 = y1_selection(X = x_6, scope = 'y_sel', mask = mask['x'])
+        self.yp2, self.logits_y2 = y2_selection(Q = q_6, X = x_6, y1_softmax = self.yp,  scope = 'y2_sel', mask = mask)
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
 
