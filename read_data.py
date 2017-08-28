@@ -169,8 +169,8 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
 
 def read_data(config, data_type, ref, data_filter = None):
-    data_path = os.path.join(config['directories']['out_dir'], "data_{}.json".format(data_type))
-    shared_path = os.path.join(config['directories']['out_dir'], "shared_{}.json".format(data_type))
+    data_path = os.path.join(config['directories']['dir'], "data_{}.json".format(data_type))
+    shared_path = os.path.join(config['directories']['dir'], "shared_{}.json".format(data_type))
     with open(data_path, 'r') as fh:
         data = json.load(fh)
     with open(shared_path, 'r') as fh:
