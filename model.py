@@ -404,14 +404,19 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs, Ps, Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
 
+        #Scaling word2vec matrices before adding encoder
         with tf.variable_scope('Scaling') as scope, tf.device('/cpu:0'):
             if self.config['model_options']['word2vec_vector_scaling']:
                 weigths = tf.get_variable('weights', shape = self.WEAs)
                 bias = tf.get_variable('bias', shape = self.WEAs, initializer = tf.zeros_initializer())
             elif self.config['model_options']['word2vec_matrix_scaling']:
                 with tf.variable_scope('conv2d'):
-                    weigths = tf.get_variable('kernel', shape = [1,1,self.WEs,self.WEAs])
-                    bias = tf.get_variable('bias', shape = [self.WEAs])
+                    #If the scaling matrix was previously trained
+                    if self.config['weights_init']['pre_trained_scaling_matrix']: 
+                        weigths = tf.get_variable('kernel', initializer = np.load('./kernel.npy'), trainable = False)
+                    else: #If the scaling matrix was not previously trained
+                        weigths = tf.get_variable('kernel', shape = [1,1,self.WEs,self.WEAs])
+                    bias = tf.get_variable('bias', shape = [self.WEAs], initializer = tf.zeros_initializer())
             scope.reuse_variables()
             x_scaled = embed_scaling(Ax)
             q_scaled = embed_scaling(Aq)
