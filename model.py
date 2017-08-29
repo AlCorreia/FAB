@@ -302,7 +302,7 @@ class Model(object):
         def layer_normalization (x, gain = 1.0,scope = None):
             with tf.variable_scope(scope):
                 mean, var = tf.nn.moments(x, axes=[-1]) #To compute variance and means
-                var += 1e-30 #to avoid NaN, if variance = 0
+                var += 1e-6 #to avoid NaN, if variance = 0
                 normalized_x = tf.transpose(
                                 tf.multiply(
                                     tf.add(mean,
