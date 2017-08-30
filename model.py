@@ -353,35 +353,34 @@ class Model(object):
                 else:
                     return output_1, output_2
 
-        def y1_selection(X, mask, scope):
+
+        def linear_sel(X, mask, scope): #Select one vector among n vectors by max(w*X) 
             with tf.variable_scope(scope):
                 W = tf.get_variable('W', shape = [self.WEAs, 1], dtype = tf.float32)
-                logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
-                output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask, VERY_LOW_NUMBER)))
+                logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #[Bs, , 1]
+                output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER))) #[Bs, , 1]
             return output, logits
 
-        def y2_selection(Q, X, y1_softmax, mask, scope):
+        def split_layer_sel(Q, X, mask, scope): #Compute a self_attention, cross_attention and estimate the answer by linear_selec.
             with tf.variable_scope(scope):
-                #y2 logits computed with one extra layer after y1 computation: x*W
-                if self.config['model_options']['y2_sel'] == "extra_layer":
-                    q_y1, x_y1 = one_layer(Q, X, mask, 'layer_y2', switch = False)
-                    W = tf.get_variable('W', shape = [self.WEAs, 1], dtype = tf.float32)
-                    logits = tf.reshape(tf.matmul(tf.reshape(X,[-1,self.WEAs]),W), [self.Bs,-1]) #W*x
-                    output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-                #y2 logits computed using concat([x,self_x,cross_x])*W
-                elif self.config['model_options']['y2_sel'] == "split_layer":
-                    self_attention_Q = layer_normalization(tf.add(Q, attention_layer(X1 = Q, mask = mask['qq'], scope = 'qq')), scope = 'norm_qq')
-                    FF_QQ = layer_normalization(tf.add(self_attention_Q, FeedForward_NN(self_attention_Q,'FF_qq')), scope =  'norm_FF_qq')
-                    self_attention_X = layer_normalization(attention_layer(X1 = X, mask = mask['xx'], scope = 'xx'), scope = 'norm_xx')
-                    cross_attention_X = layer_normalization(attention_layer(X1 = FF_QQ, X2 = X, mask = mask['xq'], scope = 'xq'), scope = 'norm_xq')
-                    FF_self_X = layer_normalization(FeedForward_NN(self_attention_X,'FF_xx_self'), scope =  'norm_FF_xx_self')
-                    FF_cross_X = layer_normalization(FeedForward_NN(cross_attention_X,'FF_xx_cross'), scope =  'norm_FF_xx_cross')
-                    W = tf.get_variable('W', shape = [self.WEAs*3, 1], dtype = tf.float32)
-                    concat_all = tf.concat([X, FF_self_X, FF_cross_X], axis = 2)
-                    logits = tf.reshape(tf.matmul(tf.reshape(concat_all,[-1,self.WEAs*3]),W), [self.Bs,-1]) #W*x
-                    output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+                self_attention_Q = layer_normalization(tf.add(Q, attention_layer(X1 = Q, mask = mask['qq'], scope = 'qq')), scope = 'norm_qq')
+                FF_QQ = layer_normalization(tf.add(self_attention_Q, FeedForward_NN(self_attention_Q,'FF_qq')), scope =  'norm_FF_qq')
+                self_attention_X = layer_normalization(attention_layer(X1 = X, mask = mask['xx'], scope = 'xx'), scope = 'norm_xx')
+                cross_attention_X = layer_normalization(attention_layer(X1 = FF_QQ, X2 = X, mask = mask['xq'], scope = 'xq'), scope = 'norm_xq')
+                FF_self_X = layer_normalization(FeedForward_NN(self_attention_X,'FF_xx_self'), scope =  'norm_FF_xx_self')
+                FF_cross_X = layer_normalization(FeedForward_NN(cross_attention_X,'FF_xx_cross'), scope =  'norm_FF_xx_cross')
+                W = tf.get_variable('W', shape = [self.WEAs*3, 1], dtype = tf.float32) #[WEAs*3, 1]
+                concat_all = tf.concat([X, FF_self_X, FF_cross_X], axis = 2)
+                logits = tf.reshape(tf.matmul(tf.reshape(concat_all,[-1,self.WEAs*3]),W), [self.Bs,-1]) #W*x #[Bs, , 1]
+                output = tf.nn.softmax(tf.add(logits,tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
             return output, logits
 
+        def y_selection(Q, X, mask, scope, method = "linear", y1_sel = None):
+            if method == "linear":
+                output, logits = linear_sel(X, mask, scope)
+            elif method == "split_layer":
+                output, logits = split_layer_sel(Q, X, mask, scope)
+            return output, logits
 
         config = self.config
         #Mask matrices
@@ -426,22 +425,20 @@ class Model(object):
             with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
         #Computing all attentions
-        if config['model_options']['switching_model']:
-            q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0', switch = False)
-            q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1', switch = True)
-            q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2', switch = False)
-            q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = True)
-            q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
-            q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = True)
-        else:
-            q_1, x_1 = one_layer(q_scaled, x_scaled, mask, 'layer_0', switch = False)
-            q_2, x_2 = one_layer(q_1, x_1, mask, 'layer_1', switch = False)
-            q_3, x_3 = one_layer(q_2, x_2, mask, 'layer_2', switch = False)
-            q_4, x_4 = one_layer(q_3, x_3, mask, 'layer_3', switch = False)
-            q_5, x_5 = one_layer(q_4, x_4, mask, 'layer_4', switch = False)
-            q_6, x_6 = one_layer(q_5, x_5, mask, 'layer_y1', switch = False)
-        self.yp, self.logits_y1 = y1_selection(X = x_6, scope = 'y_sel', mask = mask['x'])
-        self.yp2, self.logits_y2 = y2_selection(Q = q_6, X = x_6, y1_softmax = self.yp,  scope = 'y2_sel', mask = mask)
+        q = [q_scaled]
+        x = [x_scaled]
+        num_layers_pre = config['model']['n_pre_layer'] #Number of layers until computation of y1
+        num_layers_post = config['model']['n_post_layer']  #Layers after computation of y1 to compute y2
+        for i in range(num_layers_pre+num_layers_post):
+            if config['model_options']['switching_model']:
+                q_i, x_i = one_layer(q[i], x[i] , mask, 'layer_'+str(i), switch = (i%2 == 1))
+            else:
+                q_i, x_i = one_layer(q[i], x[i] , mask, 'layer_'+str(i), switch = False)
+            q.append(q_i)
+            x.append(x_i) 
+        self.yp, self.logits_y1 = y_selection(Q =q[-1-num_layers_post], X = x[-1-num_layers_post], mask = mask, scope = 'y1_sel', method = config['model']['y1_sel'])
+        self.yp2, self.logits_y2 = y_selection(Q = q[-1], X = x[-1],  scope = 'y2_sel',
+                                                 mask = mask, method = config['model']['y2_sel'])
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
 
