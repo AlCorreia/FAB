@@ -45,8 +45,8 @@
 		"attention_emb_size": 128,
 		"FeedForward_Hidden_Size": 512,
                 "time_encoding": true,
-		"n_pre_layer": 6,
-		"n_post_layer":1,
+		"n_pre_layer": 4,
+		"n_post_layer":2,
         	"y1_sel":"linear",
         	"y2_sel":"linear"
 	},
@@ -65,12 +65,12 @@
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",
-		"pre_trained_scaling_matrix": true
+		"pre_trained_scaling_matrix": false
 	},
 	"model_options":{
 		"norm_layer":false,
-        	"symmetric_layers": "NOT_IMPLEMENTED",
-        	"switching_model":true,
+        	"symmetric": true,
+        	"switching_model":false,
         	"word2vec_matrix_scaling": true,
         	"word2vec_vector_scaling": false
 				}
