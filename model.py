@@ -443,13 +443,15 @@ class Model(object):
             with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
 	
-        #Computing following layers after encoder
-        q = [layer_normalization(q_scaled, scope = 'norm_q_scaled')]
-        x = [layer_normalization(x_scaled, scope = 'norm_q_scaled')]
+        #Defining functions according to config.json. They are used later in the final model.
         num_layers_pre = config['model']['n_pre_layer'] #Number of layers until computation of y1
         num_layers_post = config['model']['n_post_layer']  #Layers after computation of y1 to compute y2
         switch = lambda i: (i%2 == 1) if config['model_options']['switching_model'] else lambda i: False
         layer_func = one_layer_symmetric if config['model_options']['symmetric'] else one_layer
+
+        #Computing following layers after encoder
+        q = [layer_normalization(q_scaled, scope = 'norm_q_scaled')] if config['model_options']['encoder_normalization'] else [q_scaled]
+        x = [layer_normalization(x_scaled, scope = 'norm_x_scaled')] if config['model_options']['encoder_normalization'] else [x_scaled]
         for i in range(num_layers_pre+num_layers_post):
             q_i, x_i = layer_func(q[i], x[i] , mask, 'layer_'+str(i), switch = switch(i))
             q.append(q_i)
