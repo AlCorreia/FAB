@@ -45,16 +45,16 @@
 		"attention_emb_size": 128,
 		"FeedForward_Hidden_Size": 512,
                 "time_encoding": true,
-		"n_pre_layer": 4,
-		"n_post_layer":2,
+		"n_pre_layer": 5,
+		"n_post_layer":1,
         	"y1_sel":"linear",
         	"y2_sel":"linear"
 	},
 	"train":{
 		"check_available_memory":  false,
 		"train": true,
-		"batch_size":30,
-		"steps":576000,
+		"batch_size":105,
+		"steps":200000,
 		"steps_to_save": 4000,
 		"type": "AdaDelta",
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
@@ -69,9 +69,10 @@
 	},
 	"model_options":{
 		"norm_layer":false,
-        	"symmetric": true,
-        	"switching_model":false,
+        	"symmetric": false,
+        	"switching_model":true,
         	"word2vec_matrix_scaling": true,
-        	"word2vec_vector_scaling": false
+        	"word2vec_vector_scaling": false,
+                "encoder_normalization": false
 				}
 }
