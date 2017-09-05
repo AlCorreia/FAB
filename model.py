@@ -210,8 +210,8 @@ class Model(object):
                 X = tf.squeeze(tf.layers.conv2d(X, filters = self.WEAs, kernel_size = 1, strides = 1, use_bias = True, reuse = True, name = "conv2d")) #XW+B
             #If the word2vec vector is scaled by a vector
             elif self.config['model_options']['word2vec_vector_scaling']:
-                weights = tf.get_variable('weights', shape = [self.WEAs])
-                bias = tf.get_variable('bias', shape = [self.WEAs])
+                weights = tf.get_variable('weights', shape = [self.WEAs], initializer = tf.ones_initializer())
+                bias = tf.get_variable('bias', shape = [self.WEAs], initializer =  tf.zeros_initializer())
                 X = tf.slice(X,[0,0,0],[self.Bs,tf.shape(X)[1],self.WEAs]) #slice the first WEAs columns
                 X = tf.add(tf.multiply(X,weights), bias) #xi = xi*w+b
             return X
