@@ -7,6 +7,7 @@ import random
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 from tqdm import tqdm
+from utils import plot, send_mail
 import pdb
 
 from read_data import get_batch_idxs
@@ -91,6 +92,8 @@ class Model(object):
         #Values for computing EM and F1 for dev
         self.EM_dev = []
         self.F1_dev = []
+        self.EM_train = []
+        self.F1_train = []
 
         if config['model']['is_Attention_Model']:
             self._build_forward_Attention()
@@ -165,6 +168,8 @@ class Model(object):
                                    feed_dict=feed_dict)
         # Write the results to Tensorboard
         EM, F1 = EM_and_F1(self.answer,[Start_Index,End_Index])
+        self.EM_train.append(EM)
+        self.F1_train.append(F1)
         summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
         summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1)])
         self.writer.add_summary(summary, global_step)
