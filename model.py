@@ -50,6 +50,7 @@ class Model(object):
         self.WVs = config['model']['vocabulary_size']
         self.WEs = int(config['glove']['vec_size']) # Assumed to be equal to the GloVe vector size
         self.WEAs = config['model']['attention_emb_size'] #Word-embedding attention size
+        self.WEPs = config['model']['process_emb_size']  #Word-embedding attention size for attention and feed-forward sublayers
         # self.CVs = config['model']['char_vocabulary_size']
         # self.CEs = config['model']['char_emb_size']
         # self.Co = config['model']['char_out_size']
@@ -262,16 +263,16 @@ class Model(object):
                 if X2 is None:
                     length_X2 = length_X1
                     #(SELF ATTENTION) If X2 is None Compute Q = X1*WQ, K = X1*WK, V=X1*WV
-                    QKV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*3, kernel_size = 1, strides = 1, name = 'QKV_Comp'))
-                    Q, K, V = tf.split(QKV, num_or_size_splits = [self.WEAs,self.WEAs,self.WEAs], axis = 2)
+                    QKV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEPs*3, kernel_size = 1, strides = 1, name = 'QKV_Comp'))
+                    Q, K, V = tf.split(QKV, num_or_size_splits = [self.WEPs,self.WEPs,self.WEPs], axis = 2)
                 else:
                     #(CROSS ATTENTION) If X2 is not none, compute Q = X1*WQ, K = X2*WK, V=X1*WV
                     length_X2 = X2.get_shape()[1]
-                    KV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEAs*2, kernel_size = 1, strides = 1, name = 'KV_Comp'))
-                    K, V = tf.split(KV, num_or_size_splits = [self.WEAs,self.WEAs], axis = 2)
+                    KV = tf.squeeze(tf.layers.conv2d(X1,filters = self.WEPs*2, kernel_size = 1, strides = 1, name = 'KV_Comp'))
+                    K, V = tf.split(KV, num_or_size_splits = [self.WEPs,self.WEPs], axis = 2)
                     X2 = tf.expand_dims(X2,2)
                     X2.set_shape([self.Bs,length_X2,1,self.WEAs])
-                    Q = tf.squeeze(tf.layers.conv2d(X2, filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Q_Comp'))
+                    Q = tf.squeeze(tf.layers.conv2d(X2, filters = self.WEPs, kernel_size = 1, strides = 1, name = 'Q_Comp'))
                     X2 = tf.squeeze(X2)
                     X2.set_shape([self.Bs,length_X2,self.WEAs])
                 X1 = tf.squeeze(X1)
@@ -297,7 +298,7 @@ class Model(object):
                 x_attention = tf.matmul(softmax,V) #softmax(Q*K^T)*V
                 #Concatenate everything together
                 x_attention_concat = tf.concat(tf.unstack(x_attention, axis = 0, num = self.MHs), axis = 2) 
-                x_attention_concat.set_shape([self.Bs, length_X2, self.WEAs])
+                x_attention_concat.set_shape([self.Bs, length_X2, self.WEPs])
                 #Compute softmax(Q*K^T)*V*WO
                 x_final = tf.squeeze(tf.layers.conv2d(tf.expand_dims(x_attention_concat,2),filters = self.WEAs, kernel_size = 1, strides = 1, name = 'Att_Comp'))
                 #Add Dropout
@@ -414,7 +415,7 @@ class Model(object):
         mask['xx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.x,1))),tf.float32)
         mask['xq'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.x,-1),tf.expand_dims(self.q,1))),tf.float32)
         mask['qx'] = tf.cast(tf.sign(tf.matmul(tf.expand_dims(self.q,-1),tf.expand_dims(self.x,1))),tf.float32)
-        with tf.variable_scope("word_emb"), tf.device("/cpu:0"):
+        with tf.variable_scope("word_emb"):
             # TODO: I am not sure that having a config variable for this is the best solution
             # TODO: Save the embedding matrix somewhere other than the config file
             word_emb_mat = tf.get_variable("word_emb_mat",
@@ -427,7 +428,7 @@ class Model(object):
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs, Qs, Hn]
 
         #Scaling word2vec matrices before adding encoder
-        with tf.variable_scope('Scaling') as scope, tf.device('/cpu:0'):
+        with tf.variable_scope('Scaling') as scope:
             if self.config['model_options']['word2vec_vector_scaling']:
                 weigths = tf.get_variable('weights', shape = self.WEAs)
                 bias = tf.get_variable('bias', shape = self.WEAs, initializer = tf.zeros_initializer())
@@ -445,7 +446,7 @@ class Model(object):
 
         #Encoding Variables
         if config['model']['time_encoding']:
-            with tf.variable_scope("Encoding"), tf.device('/cpu:0'):
+            with tf.variable_scope("Encoding"):
                 x_scaled, q_scaled = encoder (x_scaled,q_scaled)
 	
         #Defining functions according to config.json. They are used later in the final model.
