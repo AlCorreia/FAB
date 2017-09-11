@@ -29,7 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID00",
+                "name": "ID47",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,		
@@ -39,13 +39,14 @@
 		"char_vocabulary_size":30,
 		"input_keep_prob":0.8,
 		"share_lstm_weights":true,
-		"encoder_low_freq":2.0,
+		"encoder_low_freq":1.0,
 		"encoder_high_freq": 10000.0,
-		"multi_head_size": 5,
+		"multi_head_size": 3,
 		"attention_emb_size": 300,
-		"FeedForward_Hidden_Size": 600,
-                "time_encoding": true,
-		"n_pre_layer": 4,
+		"FeedForward_Hidden_Size": 264,
+		"process_emb_size": 66,
+                "time_encoding": true,	
+		"n_pre_layer": 6,
 		"n_post_layer":1,
         	"y1_sel":"linear",
         	"y2_sel":"linear"
@@ -53,7 +54,7 @@
 	"train":{
 		"check_available_memory":  false,
 		"train": true,
-		"batch_size":60,
+		"batch_size":90,
 		"steps":400000,
 		"steps_to_save": 3000,
 		"steps_to_email":42000,
@@ -61,7 +62,7 @@
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
 		"AdaDelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
 		"dropout_att_encoder": 0.10,
-                "dropout_att_sublayer": 0.2,
+                "dropout_att_sublayer": 0.10,
 		"label_smoothing": 0.9
 	},
 	"weights_init":{
@@ -72,8 +73,8 @@
 		"norm_layer":false,
         	"symmetric": false,
         	"switching_model":true,
-        	"word2vec_matrix_scaling": false,
-        	"word2vec_vector_scaling": true,
+        	"word2vec_matrix_scaling": true,
+        	"word2vec_vector_scaling": false,
                 "encoder_normalization": false
 				}
 }
