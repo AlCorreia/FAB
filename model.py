@@ -223,17 +223,21 @@ class Model(object):
             return X
 
         def encoder (X,Q):
+            size_x = tf.shape(X)[-2]
+            size_q = tf.shape(Q)[-2]
             low_frequency = config['model']['encoder_low_freq']
             high_frequency = config['model']['encoder_high_freq']
             #Compute the number of words in passage and question
-            size_x = tf.shape(X)[-2]
-            size_q = tf.shape(Q)[-2]
             #Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x,size_q),lambda: size_x, lambda: size_q)), 1),tf.float32)
             #Create a vector with all the exponents
             exponents = tf.multiply(tf.log(high_frequency/low_frequency),tf.divide(tf.range(self.WEAs/2),self.WEAs/2-1))
             #Power the base frequency by exponents
-            freq_PG = tf.expand_dims(tf.multiply(1/low_frequency,tf.exp(-exponents)),0)
+            freq = tf.expand_dims(tf.multiply(1/low_frequency,tf.exp(-exponents)),0)
+            if config['model']['encoder_learn_freq']: #Encoder frequencies are trained
+                freq_PG = tf.get_variable('wave_length', dtype = tf.float32, initializer = freq_PG)
+            else: #Encoder frequencies are not trained
+                freq_PG = freq
 
             #Compute the encoder values
             encoder_sin = tf.sin(tf.matmul(pos,freq_PG))
@@ -438,7 +442,10 @@ class Model(object):
                     if self.config['weights_init']['pre_trained_scaling_matrix']: 
                         weigths = tf.get_variable('kernel', initializer = np.load('./kernel.npy'), trainable = False)
                     else: #If the scaling matrix was not previously trained
-                        weigths = tf.get_variable('kernel', shape = [1,1,self.WEs,self.WEAs])
+                        #In order to be orthonormal
+                        weights_init = np.random.random((1,1,self.WEs, self.WEAs)).astype(np.float32) #might not work properly if WEs different from WEAs.
+                        U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
+                        weigths = tf.get_variable('kernel', initializer = U)
                     bias = tf.get_variable('bias', shape = [self.WEAs], initializer = tf.zeros_initializer())
             scope.reuse_variables()
             x_scaled = embed_scaling(Ax)
