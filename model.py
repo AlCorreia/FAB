@@ -235,7 +235,7 @@ class Model(object):
             #Power the base frequency by exponents
             freq = tf.expand_dims(tf.multiply(1/low_frequency,tf.exp(-exponents)),0)
             if config['model']['encoder_learn_freq']: #Encoder frequencies are trained
-                freq_PG = tf.get_variable('wave_length', dtype = tf.float32, initializer = freq_PG)
+                freq_PG = tf.get_variable('wave_length', dtype = tf.float32, initializer = freq)
             else: #Encoder frequencies are not trained
                 freq_PG = freq
 
