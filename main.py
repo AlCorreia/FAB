@@ -22,7 +22,7 @@ def main(config):
 	if config['model']['run']:
 		data = read_data(config,'train',ref=False, data_filter = True)
 		data_dev = read_data(config,'dev',ref=False, data_filter = True)
-		#update config with max_word_size, max_passage_size, embedded_vector
+		# update config with max_word_size, max_passage_size, embedded_vector
 		config = update_config(config, data)
  	       # Create an instance of the model
 		model = Model(config)
@@ -65,7 +65,7 @@ def main(config):
 		print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+'\n')
 
 
-def evaluate(config,model,data_dev): #To check the exact match and F1 of the model
+def evaluate(config, model, data_dev): #To check the exact match and F1 of the model
 	model.EM_dev = []
 	model.F1_dev = []
 	valid_idxs = data_dev['valid_idxs']

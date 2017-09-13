@@ -10,21 +10,22 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 
+
 def get_word_span(context, spans, start, stop):
 	search_index = 0
 	word_id = []
-	word_index=[]
-	for word_idx, word in  enumerate(spans):
+	word_index = []
+	for word_idx, word in enumerate(spans):
 		word_init = context.find(word, search_index)
 		assert word_init >= 0
 		word_end = word_init + len(word)
-		if  (stop > word_init and start < word_end):
+		if (stop > word_init and start < word_end):
 			word_id.append(word_idx)
 			word_index.append([word_init, word_end])
-		search_index=word_end
+		search_index = word_end
 
 	assert len(word_id) > 0, "{} {} {} {}".format(context, spans, start, stop)
-	return word_id[0], (word_id[-1] + 1), word_index[0][0], word_index[-1][0] 
+	return word_id[0], (word_id[-1] + 1), word_index[0][0], word_index[-1][0]
 
 
 def process_tokens(temp_tokens):
@@ -38,12 +39,13 @@ def process_tokens(temp_tokens):
 		tokens.extend(re.split("([{}])".format("".join(l)), token))
 	return tokens
 
-def send_mail(attach_dir,subject):
+
+def send_mail(attach_dir, subject):
     COMMASPACE = ', '
     sender = 'jorgematlab93@gmail.com'
     gmail_password = 'AmeMatlab12.'
     recipients = ['jorge.silva93@gmail.com']
-    
+
     # Create the enclosing (outer) message
     outer = MIMEMultipart()
     outer['Subject'] = subject
@@ -97,3 +99,24 @@ def plot(X,EM,F1,save_dir):
     handles, labels = axarr[1].get_legend_handles_labels()
     axarr[1].legend(handles[::-1], labels[::-1])
     plt.savefig(save_dir)
+
+
+def EM_and_F1(answer, answer_est):
+    EM = []
+    F1 = []
+    y1_est, y2_est = answer_est
+    y1, y2 = answer
+    for i in range(len(y1_est)):
+        EM_i = []
+        F1_i = []
+        for j in range(len(y1[i])):
+            EM_i.append(1.0 if y1[i][j] == y1_est[i] and y2[i][j] == y2_est[i] else 0.0)
+            TT = max([min([y2[i][j]+1, y2_est[i]+1]) - max([y1[i][j], y1_est[i]]), 0])
+            FT = y2_est[i]+1-y1_est[i]-TT
+            FF = y2[i][j]+1-y1[i][j]-TT
+            a = TT/(TT+FT)
+            b = TT/(TT+FF)
+            F1_i.append(2/(1/a+1/b) if a != 0 and b != 0 else 0)
+        EM.append(max(EM_i))
+        F1.append(max(F1_i))
+    return [sum(EM)/len(EM), sum(F1)/len(F1)]
