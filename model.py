@@ -240,15 +240,25 @@ class Model(object):
                 freq_PG = freq
 
             #Compute the encoder values
-            encoder_sin = tf.sin(tf.matmul(pos,freq_PG))
-            encoder_cos = tf.cos(tf.matmul(pos,freq_PG))
+            encoder_angles = tf.matmul(pos,freq_PG)
+            encoder_sin = tf.sin(encoder_angles)
+            encoder_cos = tf.cos(encoder_angles)
 
             #Concatenate both values
             encoder = tf.concat([encoder_sin,encoder_cos], axis = 1)
-
-            #Computes the encoder values for x and q
+            #Compute x_encoder
             encoder_x = tf.slice(encoder,[0,0],[size_x,self.WEAs])
-            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
+            #Compute q_encoder
+            if config['model']['encoder_no_cross']:
+                #If no cross attention between encoders is desired
+                freq_q_sum = tf.add(tf.multiply(config['model']['encoder_step_skip_size'],freq),(np.pi/2))
+                encoder_q_angles = tf.add(encoder_angles,freq_q_sum)
+                encoder_sin_q = tf.sin(encoder_q_angles)
+                encoder_cos_q = tf.cos(encoder_q_angles)
+                encoder_q =  tf.slice(tf.concat([encoder_sin_q,encoder_cos_q], axis = 1),[0,0],[size_q,self.WEAs])
+            else:
+                #If encoder in x and q are the same
+                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
 
 	#Encoding x and q
             x_encoded = tf.add(X, encoder_x)
