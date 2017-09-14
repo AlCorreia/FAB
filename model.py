@@ -246,7 +246,14 @@ class Model(object):
         # Create a vector with all the exponents
         exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEAs/2), self.WEAs/2-1))
         # Power the base frequency by exponents
-        freq_PG = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
+        freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
+        if self.config['model']['encoder_learn_freq']: #Encoder frequencies are trained
+            freq_PG = tf.get_variable('wave_length', dtype = tf.float32, initializer = freq)
+        else: #Encoder frequencies are not trained
+            freq_PG = freq
+
+        #Compute the encoder values
+        encoder_angles = tf.matmul(pos,freq_PG)
 
         # Compute the encoder values
         encoder_sin = tf.sin(tf.matmul(pos, freq_PG))
@@ -257,7 +264,25 @@ class Model(object):
 
         # Computes the encoder values for x and q
         encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEAs])
-        encoder_q = tf.slice(encoder, [0, 0], [size_q, self.WEAs])
+
+        if self.config['model']['encoder_no_cross']:
+            #If no cross attention between encoders is desired
+            freq_q_sum = tf.add(
+                                tf.multiply(self.config['model']['encoder_step_skip_size'],
+                                            freq),
+                                (np.pi/2))
+            encoder_q_angles = tf.add(
+                                        encoder_angles,
+                                        freq_q_sum)
+            encoder_sin_q = tf.sin(encoder_q_angles)
+            encoder_cos_q = tf.cos(encoder_q_angles)
+            encoder_q =  tf.slice(
+                                    tf.concat([encoder_sin_q,encoder_cos_q], axis = 1),
+                                    [0,0],
+                                    [size_q,self.WEAs])
+        else:
+            #If encoder in x and q are the same
+            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -636,9 +661,12 @@ class Model(object):
                                     initializer=np.load('./kernel.npy'),
                                     trainable=False)
                     else:  # If the scaling matrix was not previously trained
+                        #In order to be orthonormal
+                        weights_init = np.random.random((1,1,self.WEs, self.WEAs)).astype(np.float32) #might not work properly if WEs different from WEAs.
+                        _, _, U = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
-                                    shape=[1, 1, self.WEs, self.WEAs])
+                                    initializer = U)
                     bias = tf.get_variable('bias',
                                            shape=[self.WEAs],
                                            initializer=tf.zeros_initializer())
