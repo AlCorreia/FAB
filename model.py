@@ -32,6 +32,8 @@ class Model(object):
         self.dir_plots = config['directories']['plots']
         # Define global step and learning rate decay
         self.global_step = tf.Variable(0, trainable=False)
+        # Define a placeholder for the dropout
+        self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -167,7 +169,10 @@ class Model(object):
 
         """
         # Combine the input dictionaries for all the features models
-        feed_dict = self.get_feed_dict(batch_idxs, is_training=True, dataset=dataset)
+        feed_dict = self.get_feed_dict(batch_idxs,
+                                       is_training=True,
+                                       dataset=dataset)
+        feed_dict['dropout:0'] = self.config['model']['input_keep_prob']
 
         summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                    feed_dict=feed_dict)
@@ -712,7 +717,7 @@ class Model(object):
             forget_bias=config['model']['forget_bias'])
         dropout_cell = tf.contrib.rnn.DropoutWrapper(
             cell,
-            input_keep_prob=tf.cond(self.is_training, lambda: config['model']['input_keep_prob'], lambda: 1.0))
+            input_keep_prob=self.keep_prob)
 
         # Calculate the number of used values in the each matrix
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 1)  # [Bs]
@@ -759,7 +764,7 @@ class Model(object):
             cell_after_att = tf.contrib.rnn.BasicLSTMCell(self.Hn, state_is_tuple=True, forget_bias=config['model']['forget_bias'])
             dropout_cell_after_att = tf.contrib.rnn.DropoutWrapper(
                 cell_after_att,
-                input_keep_prob=tf.cond(self.is_training, lambda: config['model']['input_keep_prob'], lambda: 1.0))
+                input_keep_prob=self.keep_prob)
             (fw_g0, bw_g0), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att,
                                                                 cell_bw=dropout_cell_after_att,
                                                                 inputs=p0,
@@ -771,23 +776,31 @@ class Model(object):
             # [Bs, Ps, 8Hn]
             cell_after_att_2 = tf.contrib.rnn.BasicLSTMCell(
                 self.Hn,
-                state_is_tuple=True, forget_bias=config['model']['forget_bias'])
-            dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(cell_after_att_2, input_keep_prob = tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
-            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=dropout_cell_after_att_2,
-                                                                cell_bw=dropout_cell_after_att_2,
-                                                                inputs=g0,
-                                                                sequence_length=x_len,
-                                                                dtype='float',
-                                                                scope='g1')
+                state_is_tuple=True,
+                forget_bias=config['model']['forget_bias'])
+            dropout_cell_after_att_2 = tf.contrib.rnn.DropoutWrapper(
+                cell_after_att_2,
+                input_keep_prob=self.keep_prob)
+            (fw_g1, bw_g1), _ = tf.nn.bidirectional_dynamic_rnn(
+                                    cell_fw=dropout_cell_after_att_2,
+                                    cell_bw=dropout_cell_after_att_2,
+                                    inputs=g0,
+                                    sequence_length=x_len,
+                                    dtype='float',
+                                    scope='g1')
 
             g1 = tf.concat([fw_g1, bw_g1, p0], axis=2)
 
-            w_y1 = tf.get_variable('w_y1', shape=[10*self.Hn, 1], dtype=tf.float32)
+            w_y1 = tf.get_variable('w_y1',
+                                   shape=[10*self.Hn, 1],
+                                   dtype=tf.float32)
             logits_y1 = tf.reshape(
                 tf.matmul(
                     tf.concat(tf.unstack(value=g1, axis=0), axis=0),
                     w_y1),
-            [self.Bs, -1]) + tf.multiply(tf.cast(1 - self.x_mask,tf.float32), VERY_LOW_NUMBER) # mask
+                [self.Bs, -1]) + tf.multiply(tf.cast(1 - self.x_mask, tf.float32),
+                        VERY_LOW_NUMBER)  # mask
+
             smax = tf.nn.softmax(logits_y1, 1)
             a1i = tf.matmul(tf.expand_dims(smax, 1), g1)  # softsel
             a1i = tf.tile(a1i, [1, self.Ps, 1])
@@ -795,10 +808,11 @@ class Model(object):
             # [Bs, Sn, Ss, 2Hn]
             cell_y2 = tf.contrib.rnn.BasicLSTMCell(
                 self.Hn,
-                state_is_tuple=True, forget_bias=config['model']['forget_bias'])
+                state_is_tuple=True,
+                forget_bias=config['model']['forget_bias'])
             dropout_cell_y2 = tf.contrib.rnn.DropoutWrapper(
                 cell_y2,
-                input_keep_prob=tf.cond(self.is_training,lambda: config['model']['input_keep_prob'],lambda: 1.0))
+                input_keep_prob=self.keep_prob)
             (fw_g2, bw_g2), _ = tf.nn.bidirectional_dynamic_rnn(
                 cell_fw=dropout_cell_y2,
                 cell_bw=dropout_cell_y2,
@@ -833,7 +847,6 @@ class Model(object):
     def _build_loss(self):
         """
             Defines the model's loss function.
-
         """
         # TODO: add collections if useful. Otherwise delete them.
         ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
