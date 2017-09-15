@@ -9,6 +9,7 @@ from tqdm import tqdm
 from utils import plot, send_mail, EM_and_F1
 import pdb
 
+from my_tf import optimize_loss
 from read_data import get_batch_idxs
 
 VERY_LOW_NUMBER = -1e30
@@ -56,7 +57,7 @@ class Model(object):
         # self.CVs = config['model']['char_vocabulary_size']
         # self.CEs = config['model']['char_emb_size']
         # self.Co = config['model']['char_out_size']
-        self.Hn = config['model']['n_hidden'] # Number of hidden units in the LSTM cell
+        self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
         # Define placeholders
         # TODO: Include characters
@@ -108,7 +109,7 @@ class Model(object):
 
         # Define optimizer and train step
         # TODO: Add the optimizer option to the config file
-        if config['train']['type'] == "AdaDelta":
+        if config['train']['type'] == "Adadelta":
             self.learning_rate = tf.train.exponential_decay(
                 learning_rate=config['train']['AdaDelta']['learning_rate'],
                 global_step=self.global_step,
@@ -130,7 +131,8 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
-        self.train_step = self.optimizer.minimize(self.loss, global_step=self.global_step)
+        self.train_step = optimize_loss(self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=self.config['train']['type'],
+        summaries=["gradients"])
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
@@ -241,53 +243,64 @@ class Model(object):
         return X
 
     def _encoder(self, X, Q):
-        low_frequency = self.config['model']['encoder_low_freq']
-        high_frequency = self.config['model']['encoder_high_freq']
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
-        # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
-        pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
-        # Create a vector with all the exponents
-        exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEAs/2), self.WEAs/2-1))
-        # Power the base frequency by exponents
-        freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
-        if self.config['model']['encoder_learn_freq']: #Encoder frequencies are trained
-            freq_PG = tf.get_variable('wave_length', dtype = tf.float32, initializer = freq)
-        else: #Encoder frequencies are not trained
-            freq_PG = freq
+        if self.config['train']['trainable_encoder']:
+            pos_emb_mat = tf.get_variable(
+                "pos_emb_mat",
+                shape=[400, self.WEAs],
+                dtype=tf.float32,
+                initializer=tf.contrib.layers.xavier_initializer())
 
-        #Compute the encoder values
-        encoder_angles = tf.matmul(pos,freq_PG)
+            encoder_x = tf.nn.embedding_lookup(pos_emb_mat, tf.range(size_x))
+            encoder_q = tf.nn.embedding_lookup(pos_emb_mat, tf.range(size_q))
 
-        # Compute the encoder values
-        encoder_sin = tf.sin(tf.matmul(pos, freq_PG))
-        encoder_cos = tf.cos(tf.matmul(pos, freq_PG))
-
-        # Concatenate both values
-        encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
-
-        # Computes the encoder values for x and q
-        encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEAs])
-
-        if self.config['model']['encoder_no_cross']:
-            #If no cross attention between encoders is desired
-            freq_q_sum = tf.add(
-                                tf.multiply(self.config['model']['encoder_step_skip_size'],
-                                            freq),
-                                (np.pi/2))
-            encoder_q_angles = tf.add(
-                                        encoder_angles,
-                                        freq_q_sum)
-            encoder_sin_q = tf.sin(encoder_q_angles)
-            encoder_cos_q = tf.cos(encoder_q_angles)
-            encoder_q =  tf.slice(
-                                    tf.concat([encoder_sin_q,encoder_cos_q], axis = 1),
-                                    [0,0],
-                                    [size_q,self.WEAs])
         else:
-            #If encoder in x and q are the same
-            encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
+            low_frequency = self.config['model']['encoder_low_freq']
+            high_frequency = self.config['model']['encoder_high_freq']
+            # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
+            pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
+            # Create a vector with all the exponents
+            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEAs/2), self.WEAs/2-1))
+            # Power the base frequency by exponents
+            freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
+            if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
+                freq_PG = tf.get_variable('wave_length', dtype=tf.float32, initializer=freq)
+            else:  # Encoder frequencies are not trained
+                freq_PG = freq
+
+            # Compute the encoder values
+            encoder_angles = tf.matmul(pos, freq_PG)
+
+            # Compute the encoder values
+            encoder_sin = tf.sin(tf.matmul(pos, freq_PG))
+            encoder_cos = tf.cos(tf.matmul(pos, freq_PG))
+
+            # Concatenate both values
+            encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
+
+            # Computes the encoder values for x and q
+            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEAs])
+
+            if self.config['model']['encoder_no_cross']:
+                # If no cross attention between encoders is desired
+                freq_q_sum = tf.add(
+                                    tf.multiply(self.config['model']['encoder_step_skip_size'],
+                                                freq),
+                                    (np.pi/2))
+                encoder_q_angles = tf.add(
+                                            encoder_angles,
+                                            freq_q_sum)
+                encoder_sin_q = tf.sin(encoder_q_angles)
+                encoder_cos_q = tf.cos(encoder_q_angles)
+                encoder_q =  tf.slice(
+                                        tf.concat([encoder_sin_q,encoder_cos_q], axis=1),
+                                        [0, 0],
+                                        [size_q, self.WEAs])
+            else:
+                # If encoder in x and q are the same
+                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -666,12 +679,12 @@ class Model(object):
                                     initializer=np.load('./kernel.npy'),
                                     trainable=False)
                     else:  # If the scaling matrix was not previously trained
-                        #In order to be orthonormal
-                        weights_init = np.random.random((1,1,self.WEs, self.WEAs)).astype(np.float32) #might not work properly if WEs different from WEAs.
+                        # In order to be orthonormal
+                        weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
                         _, _, U = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
-                                    initializer = U)
+                                    initializer=U)
                     bias = tf.get_variable('bias',
                                            shape=[self.WEAs],
                                            initializer=tf.zeros_initializer())
