@@ -1,5 +1,5 @@
 import re
-
+import sys
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -83,14 +83,15 @@ def send_mail(attach_dir, subject):
     except:
         print("Unable to send the email. Error: ", sys.exc_info()[0])
 
-def plot(X,EM,F1,save_dir):
+
+def plot(X, EM, F1, save_dir):
     f, axarr = plt.subplots(2, sharex=True)
-    axarr[0].plot(X, EM[0], label = 'train')
-    axarr[0].plot(X,EM[1], label = 'dev')
+    axarr[0].plot(X, EM[0], label='train')
+    axarr[0].plot(X, EM[1], label='dev')
     axarr[0].set_title('EM (%)')
     axarr[0].grid(True)
-    axarr[1].plot(X, F1[0], label = 'train')
-    axarr[1].plot(X,F1[1], label = 'dev')
+    axarr[1].plot(X, F1[0], label='train')
+    axarr[1].plot(X, F1[1], label='dev')
     axarr[1].set_title('F1 (%)')
     axarr[1].grid(True)
 

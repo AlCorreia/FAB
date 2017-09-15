@@ -108,13 +108,12 @@ class Model(object):
         self._build_loss()
 
         # Define optimizer and train step
-        # TODO: Add the optimizer option to the config file
         if config['train']['type'] == "Adadelta":
             self.learning_rate = tf.train.exponential_decay(
-                learning_rate=config['train']['AdaDelta']['learning_rate'],
+                learning_rate=config['train']['Adadelta']['learning_rate'],
                 global_step=self.global_step,
-                decay_steps=config['train']['AdaDelta']['decay_steps'],
-                decay_rate=config['train']['AdaDelta']['decay_rate'],
+                decay_steps=config['train']['Adadelta']['decay_steps'],
+                decay_rate=config['train']['Adadelta']['decay_rate'],
                 staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(
                 learning_rate=self.learning_rate)
@@ -176,22 +175,31 @@ class Model(object):
                                        dataset=dataset)
         feed_dict['dropout:0'] = self.config['model']['input_keep_prob']
 
-        summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
-                                   feed_dict=feed_dict)
-        # Write the results to Tensorboard
-        EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
-        self.EM_train.append(EM)
-        self.F1_train.append(F1)
-        summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
-        summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1)])
-        self.writer.add_summary(summary, global_step)
-        self.writer.add_summary(summary_F1, global_step)
-        self.writer.add_summary(summary_EM, global_step)
-        # Regularly save the models parameters
-        if global_step % self.config['train']['steps_to_save'] == 0:
+        if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
+            summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
+                                       feed_dict=feed_dict)
+
+            # Write the results to Tensorboard
+            EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
+            self.EM_train.append(EM)
+            self.F1_train.append(F1)
+            summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
+            summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1)])
+            self.writer.add_summary(summary, global_step)
+            self.writer.add_summary(summary_F1, global_step)
+            self.writer.add_summary(summary_EM, global_step)
+            # Regularly save the models parameters
+
             self.saver.save(self.sess,
                             self.directory + 'ckpt/'+str(round(global_step/1000)) + 'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
+        else:
+            Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
+            EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
+
+        #To plot averaged EM and F1 during training
+        self.EM_train.append(EM)
+        self.F1_train.append(F1)
 
     def evaluate(self, batch_idxs, dataset):
         """ Compute F1 and EM for the dev dataset
@@ -246,10 +254,11 @@ class Model(object):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
-        if self.config['train']['trainable_encoder']:
+        if self.config['model']['full_trainable_encoder']:
+            #Trainable encoder has the size of the biggest paragraph in training
             pos_emb_mat = tf.get_variable(
                 "pos_emb_mat",
-                shape=[400, self.WEAs],
+                shape=[self.config['pre']['max_paragraph_size'], self.WEAs], 
                 dtype=tf.float32,
                 initializer=tf.contrib.layers.xavier_initializer())
 
