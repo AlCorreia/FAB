@@ -44,10 +44,11 @@
 		"encoder_learn_freq": true,
                 "encoder_step_skip_size": -75.0,
                 "encoder_no_cross": true,
-		"multi_head_size": 3,
+		"full_trainable_encoder": false,
+		"multi_head_size": 4,
 		"attention_emb_size": 100,
 		"FeedForward_Hidden_Size": 264,
-		"process_emb_size": 66,
+		"process_emb_size": 100,
                 "time_encoding": true,
 		"n_pre_layer": 2,
 		"n_post_layer":1,
@@ -63,11 +64,10 @@
 		"steps_to_email":42000,
 		"type": "Adadelta",
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
-		"AdaDelta": {"learning_rate":0.1, "decay_steps": 200, "decay_rate": 1.0},
+		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
 		"dropout_att_encoder": 0.10,
                 "dropout_att_sublayer": 0.10,
-		"label_smoothing": 0.9,
-		"trainable_encoder": true
+		"label_smoothing": 0.9
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",

@@ -108,14 +108,12 @@ class Model(object):
         self._build_loss()
 
         # Define optimizer and train step
-        # TODO: Add the optimizer option to the config file
-        self.learning_rate = 0.01
         if config['train']['type'] == "Adadelta":
             self.learning_rate = tf.train.exponential_decay(
-                learning_rate=config['train']['AdaDelta']['learning_rate'],
+                learning_rate=config['train']['Adadelta']['learning_rate'],
                 global_step=self.global_step,
-                decay_steps=config['train']['AdaDelta']['decay_steps'],
-                decay_rate=config['train']['AdaDelta']['decay_rate'],
+                decay_steps=config['train']['Adadelta']['decay_steps'],
+                decay_rate=config['train']['Adadelta']['decay_rate'],
                 staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(
                 learning_rate=self.learning_rate)
@@ -196,7 +194,12 @@ class Model(object):
                             self.directory + 'ckpt/'+str(round(global_step/1000)) + 'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
-            _ = self.sess.run([self.train_step], feed_dict=feed_dict)
+            Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
+            EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
+
+        #To plot averaged EM and F1 during training
+        self.EM_train.append(EM)
+        self.F1_train.append(F1)
 
     def evaluate(self, batch_idxs, dataset):
         """ Compute F1 and EM for the dev dataset
@@ -251,10 +254,11 @@ class Model(object):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
-        if self.config['train']['trainable_encoder']:
+        if self.config['model']['full_trainable_encoder']:
+            #Trainable encoder has the size of the biggest paragraph in training
             pos_emb_mat = tf.get_variable(
                 "pos_emb_mat",
-                shape=[400, self.WEAs],
+                shape=[self.config['pre']['max_paragraph_size'], self.WEAs], 
                 dtype=tf.float32,
                 initializer=tf.contrib.layers.xavier_initializer())
 
