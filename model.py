@@ -258,7 +258,7 @@ class Model(object):
             #Trainable encoder has the size of the biggest paragraph in training
             pos_emb_mat = tf.get_variable(
                 "pos_emb_mat",
-                shape=[self.config['pre']['max_paragraph_size'], self.WEAs], 
+                shape=[self.config['pre']['max_paragraph_size'], self.WEAs],
                 dtype=tf.float32,
                 initializer=tf.contrib.layers.xavier_initializer())
 
@@ -278,6 +278,8 @@ class Model(object):
                 freq_PG = tf.get_variable('wave_length', dtype=tf.float32, initializer=freq)
             else:  # Encoder frequencies are not trained
                 freq_PG = freq
+
+            freq_PG_scalar = tf.summary.scalar('wave_length', freq_PG)
 
             # Compute the encoder values
             encoder_angles = tf.matmul(pos, freq_PG)
@@ -572,6 +574,8 @@ class Model(object):
             W = tf.get_variable('W',
                                 shape=[self.WEAs, 1],
                                 dtype=tf.float32)
+            summ = tf.summary.histogram('linear_sel', W)
+            summm = tf.summary.scalar('linear_sel_sparsity', tf.nn.zero_fraction(W))
             logits = tf.reshape(
                         tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
                         [self.Bs, -1])  # [Bs, , 1]
