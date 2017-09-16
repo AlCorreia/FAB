@@ -180,7 +180,7 @@ class Model(object):
                                        feed_dict=feed_dict)
 
             # Write the results to Tensorboard
-            EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
+            EM, F1, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
             self.EM_train.append(EM)
             self.F1_train.append(F1)
             summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
@@ -215,9 +215,11 @@ class Model(object):
 
         summary, max_x, max_q, Start_Index, End_Index, global_step = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step], feed_dict=feed_dict)
         # Write the results to Tensorboard
-        EM_dev, F1_dev = EM_and_F1(self.answer, [Start_Index, End_Index])
+        EM_dev, F1_dev, y1_correct, y2_correct = EM_and_F1(self.answer, [Start_Index, End_Index])
         self.EM_dev.append(EM_dev)
         self.F1_dev.append(F1_dev)
+        self.y1_correct_dev.append(y1_correct)
+        self.y1_correct_dev.append(y2_correct)
         self.dev_writer.add_summary(summary, global_step=global_step)
 
     def _load(self):  # To load a checkpoint
@@ -279,7 +281,7 @@ class Model(object):
             else:  # Encoder frequencies are not trained
                 freq_PG = freq
 
-            freq_PG_scalar = tf.summary.scalar('wave_length', freq_PG)
+            freq_PG_scalar = tf.summary.scalar('wave_length', tf.reduce_mean(freq_PG))
 
             # Compute the encoder values
             encoder_angles = tf.matmul(pos, freq_PG)

@@ -39,7 +39,7 @@ def main(config):
 			model.train(batch_idxs, data)
 			#every n steps check F1 and EM, based on dev dataset
 			if i % config['train']['steps_to_save'] == 0:
-				EM_dev, F1_dev = evaluate(config, model, data_dev)
+				EM_dev, F1_dev, y1_correct_dev, y2_correct_dev = evaluate(config, model, data_dev)
 				# Compute EM and F1 train averaging the last 500 steps
 				EM_train, F1_train = [np.mean(model.EM_train[-500:]), np.mean(model.F1_train[-500:])]
 				model.EM_train = []
@@ -50,13 +50,17 @@ def main(config):
 				F1_dev_plot.append(F1_dev)
 				F1_train_plot.append(F1_train)
 				# To plot the EM and F1 curve
-				plot(X=steps, EM=[EM_train_plot,EM_dev_plot], F1=[F1_train_plot, F1_dev_plot], save_dir = './plots/plot.png')
+				plot(X=steps, EM=[EM_train_plot, EM_dev_plot], F1=[F1_train_plot, F1_dev_plot], save_dir = './plots/plot.png')
 				summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM_dev)])
 				summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1_dev)])
+				summary_y1_correct = tf.Summary(value=[tf.Summary.Value(tag='y1_correct', simple_value=y1_correct_dev)])
+				summary_y2_correct = tf.Summary(value=[tf.Summary.Value(tag='y2_correct', simple_value=y2_correct_dev)])
 				model.dev_writer.add_summary(summary_F1, i)
 				model.dev_writer.add_summary(summary_EM, i)
+				model.dev_writer.add_summary(summary_y1_correct, i)
+				model.dev_writer.add_summary(summary_y2_correct, i)
 				# TODO Make this print more readable than now
-				print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+'\n')
+				print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+' y1:'+str(y1_correct_dev)+' y2:'+str(y2_correct_dev)+'\n')
 			if i % config['train']['steps_to_email'] == 0 and i>0:
 				send_mail(attach_dir='./plots/plot.png', subject = config['model']['name'])
 	#To check the exact match and F1 of the model for dev
@@ -65,18 +69,20 @@ def main(config):
 		print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+'\n')
 
 
-def evaluate(config,model,data_dev): #To check the exact match and F1 of the model
+def evaluate(config, model, data_dev):  # To check the exact match and F1 of the model
 	model.EM_dev = []
 	model.F1_dev = []
+	model.y1_correct_dev = []
+	model.y2_correct_dev = []
 	valid_idxs = data_dev['valid_idxs']
 	for i in tqdm (range(math.floor(
 			len(data_dev['valid_idxs'])/config['train']['batch_size'])),
-			file=sys.stdout): #this file = sys.stdout is to only to allow the print function
+			file=sys.stdout): # this file = sys.stdout is to only to allow the print function
 		init = (i) * config['train']['batch_size']
 		end = (i+1)*config['train']['batch_size']
 		batch_idxs = valid_idxs[init:end]
 		model.evaluate(batch_idxs, data_dev)
-	return [sum(model.EM_dev)/len(model.EM_dev), sum(model.F1_dev)/len(model.F1_dev)]
+	return [sum(model.EM_dev)/len(model.EM_dev), sum(model.F1_dev)/len(model.F1_dev), sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev) ]
 
 
 if __name__ == '__main__':
