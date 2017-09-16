@@ -195,7 +195,7 @@ class Model(object):
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
             Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
-            EM, F1 = EM_and_F1(self.answer, [Start_Index, End_Index])
+            EM, F1, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
 
         #To plot averaged EM and F1 during training
         self.EM_train.append(EM)
@@ -219,7 +219,7 @@ class Model(object):
         self.EM_dev.append(EM_dev)
         self.F1_dev.append(F1_dev)
         self.y1_correct_dev.append(y1_correct)
-        self.y1_correct_dev.append(y2_correct)
+        self.y2_correct_dev.append(y2_correct)
         self.dev_writer.add_summary(summary, global_step=global_step)
 
     def _load(self):  # To load a checkpoint

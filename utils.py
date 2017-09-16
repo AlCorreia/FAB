@@ -5,6 +5,7 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import pdb
 import smtplib
 from email import encoders
 from email.mime.base import MIMEBase
@@ -124,6 +125,7 @@ def EM_and_F1(answer, answer_est):
             a = TT/(TT+FT)
             b = TT/(TT+FF)
             F1_i.append(2/(1/a+1/b) if a != 0 and b != 0 else 0)
+        assert max(EM_i)>max(F1_i)
         y1_correct.append(max(y1_correct_i))
         y2_correct.append(max(y2_correct_i))
         EM.append(max(EM_i))
