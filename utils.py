@@ -105,12 +105,18 @@ def plot(X, EM, F1, save_dir):
 def EM_and_F1(answer, answer_est):
     EM = []
     F1 = []
+    y1_correct = []
+    y2_correct = []
     y1_est, y2_est = answer_est
     y1, y2 = answer
     for i in range(len(y1_est)):
+        y1_correct_i = []
+        y2_correct_i = []
         EM_i = []
         F1_i = []
         for j in range(len(y1[i])):
+            y1_correct_i.append(1.0 if y1[i][j] == y1_est[i] else 0.0)
+            y2_correct_i.append(1.0 if y2[i][j] == y2_est[i] else 0.0)
             EM_i.append(1.0 if y1[i][j] == y1_est[i] and y2[i][j] == y2_est[i] else 0.0)
             TT = max([min([y2[i][j]+1, y2_est[i]+1]) - max([y1[i][j], y1_est[i]]), 0])
             FT = y2_est[i]+1-y1_est[i]-TT
@@ -118,6 +124,8 @@ def EM_and_F1(answer, answer_est):
             a = TT/(TT+FT)
             b = TT/(TT+FF)
             F1_i.append(2/(1/a+1/b) if a != 0 and b != 0 else 0)
+        y1_correct.append(max(y1_correct_i))
+        y2_correct.append(max(y2_correct_i))
         EM.append(max(EM_i))
         F1.append(max(F1_i))
-    return [sum(EM)/len(EM), sum(F1)/len(F1)]
+    return [sum(EM)/len(EM), sum(F1)/len(F1), sum(y1_correct)/len(y1_correct), sum(y2_correct)/len(y2_correct)]
