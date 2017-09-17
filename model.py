@@ -635,11 +635,57 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
+    def _AoA_sel(self, Q, X, mask, scope):
+        """ Attention over attention for computing y1"""
+        with tf.variable_scope(scope):
+            length_Q = Q.get_shape()[1]
+            Q = tf.expand_dims(Q, 2)
+            Q.set_shape([self.Bs, length_Q, 1, self.WEAs])
+            #Scale question matrix with a matrix W*Q
+            Q_Scaled = tf.squeeze(tf.layers.conv2d(Q,
+                                              filters=self.WEAs,
+                                              kernel_size=1,
+                                              strides=1,
+                                              name='W'))
+            Q = tf.squeeze(Q)
+            Q.set_shape([self.Bs, length_Q, self.WEAs])
+            logits = tf.matmul(X, tf.transpose(Q_Scaled, [0,2,1]))
+
+            # Sofmax for attention of Q in X: softmax(X*W*Q)
+            softmax_X = tf.nn.softmax(
+                tf.add(
+                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                    tf.multiply(1.0 - mask['xq'], VERY_LOW_NUMBER)),
+                dim=2)
+            logits = tf.matmul(X, tf.transpose(Q, [0,2,1]))
+
+            # Sofmax for attention of X in Q: softmax((X*W*Q)^T)
+            softmax_Q = tf.nn.softmax(
+                tf.add(
+                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                    tf.multiply(1.0 - mask['xq'], VERY_LOW_NUMBER)),
+                dim=1)
+            softmax_Q = tf.expand_dims(tf.reduce_mean(softmax_Q, axis=1), 1)
+            #Compute Attention over Attention
+            logits_y = tf.squeeze(
+                            tf.matmul(
+                                softmax_X,
+                                tf.transpose(softmax_Q, [0,2,1])), axis=-1)
+            #Final mask is applied
+            softmax_y = tf.nn.softmax(
+                tf.add(
+                    logits_y,
+                    tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)),
+                dim=-1)
+        return softmax_y, logits_y
+
     def _y_selection(self, Q, X, mask, scope, method="linear", y1_sel=None):
         if method == "linear":
             output, logits = self._linear_sel(X, mask, scope)
         elif method == "split_layer":
             output, logits = self._split_layer_sel(Q, X, mask, scope)
+        elif method == "AoA":
+            output, logits = self._AoA_sel(Q, X, mask, scope)
         return output, logits
 
     def _build_forward_Attention(self):

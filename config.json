@@ -29,7 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID53",
+                "name": "ID57-Vega",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -51,9 +51,9 @@
 		"process_emb_size": 100,
                 "time_encoding": true,
 		"n_pre_layer": 2,
-		"n_post_layer":1,
-        	"y1_sel":"linear",
-        	"y2_sel":"linear"
+		"n_post_layer":2,
+        	"y1_sel":"AoA",
+        	"y2_sel":"AoA"
 	},
 	"train":{
 		"check_available_memory":  false,
