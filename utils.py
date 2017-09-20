@@ -55,7 +55,7 @@ def send_mail(attach_dir, subject):
     outer.preamble = 'You will not see this in a MIME-aware mail reader.\n'
 
     # List of attachments
-    attachments = [attach_dir]
+    attachments = attach_dir
 
     # Add the attachments to the message
     for file in attachments:

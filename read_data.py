@@ -175,15 +175,15 @@ def read_data(config, data_type, ref, data_filter = None):
         data = json.load(fh)
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
-        
-        
+
+
     num_examples = len(next(iter(data.values()))) #number of questions
     #max_par = max([len(shared['x'][i][j]) for i in range(len(shared['x'])) for j in range(len(shared['x'][i]))]) #max paragraph size
     #max_q = max([len(data['q'][i]) for i in range(len(data['q']))]) # max question size
-    
+
     if data_filter: #if there is a filter to discard some of the passages or questions
         valid_idxs, valid_idxs_grouped = data_filter_func(config, data, shared)
-    else: 
+    else:
         valid_idxs, valid_idxs_grouped = range(num_examples), [range(num_examples)]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
@@ -211,7 +211,7 @@ def read_data(config, data_type, ref, data_filter = None):
         shared['char2idx'][NULL] = 0
         shared['char2idx'][UNK] = 1
         #json.dump({'unk_word2idx': shared['unk_word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w')) why to use this line?
-    else: 
+    else:
         new_shared = json.load(open(shared_path, 'r'))
         for key, val in new_shared.items():
             shared[key] = val
@@ -220,29 +220,29 @@ def read_data(config, data_type, ref, data_filter = None):
         # create word2idx for uknown and known words
         word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
         word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
-        
+
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
-        
+
         known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
         # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-        
+
         shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
-        
+
         unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
-        
-        shared['emb_mat_unk_words']  = np.array([unk_idx2vec_dict[idx] if idx in unk_idx2vec_dict
+
+        shared['emb_mat_unk_words'] = np.array([unk_idx2vec_dict[idx] if idx in unk_idx2vec_dict
                         else np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
                         for idx in range(word_vocab_size)]) #create random vectors for new words
 
-    data_set={'data':data,'type':data_type,'shared':shared,'valid_idxs':valid_idxs,'valid_idxs_grouped': valid_idxs_grouped }
+    data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
     return data_set
 
 
-def data_filter_func (config, data, shared):
+def data_filter_func(config, data, shared):
     valid_idxs = []
     x_len = data['paragraph_len']
     q_len = data['question_len']
-    #Delete paragraphs and questions longer than threshold.
+    # Delete paragraphs and questions longer than threshold.
     for i in range(len(data['q'])):
         #q = data['q'][i]
         #rx = data['*x'][i]
@@ -250,19 +250,19 @@ def data_filter_func (config, data, shared):
         if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']):
             valid_idxs.append(i)
 
-    #Group paragraphs and questions with similar sizes
+    # Group paragraphs and questions with similar sizes
     n_valid_idxs = len(valid_idxs)
     x_len = [x_len[valid_idxs[i]] for i in range(len(valid_idxs))]
     ordered_valid_idxs = [i[0] for i in sorted(zip(valid_idxs,x_len), key=lambda x:x[1])]
-    #n_chunks: number of groups, in which questions are separated according to their paragraph sizes
+    # n_chunks: number of groups, in which questions are separated according to their paragraph sizes
     n_chunks = config['pre']['n_chunks']
-    #Remainder must be taken into account, as n_valid_idxs/n_chunks might not divide evenly.
-    remainder = n_valid_idxs % n_chunks 
+    # Remainder must be taken into account, as n_valid_idxs/n_chunks might not divide evenly.
+    remainder = n_valid_idxs % n_chunks
     chunk_size = math.floor(n_valid_idxs/n_chunks)
     valid_idxs_grouped = []
     index = 0
-    #Compute the n_chunks groups of questions
-    #TODO: I guess there might be a more elegant way than using this for if else
+    # Compute the n_chunks groups of questions
+    # TODO: I guess there might be a more elegant way than using this for if else
     for i in range(n_chunks):
         if remainder> 0:
             sub_list = ordered_valid_idxs[index:index+chunk_size+1]
@@ -272,31 +272,33 @@ def data_filter_func (config, data, shared):
             sub_list = ordered_valid_idxs[index:index+chunk_size]
             index = index+chunk_size
         valid_idxs_grouped.append(sub_list)
-    #Check if the number of questions after grouping them is the same as before
+    # Check if the number of questions after grouping them is the same as before
     assert sum([len(valid_idxs_grouped[i]) for i in range(len(valid_idxs_grouped))]) == len(valid_idxs)
-    #Return individual questions order by their respective paragraph size and grouped questions
-    return ordered_valid_idxs, valid_idxs_grouped 
+    # Return individual questions order by their respective paragraph size and grouped questions
+    return ordered_valid_idxs, valid_idxs_grouped
+
 
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
-    config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype = np.float32)
+    config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype=np.float32)
     return config
+
 
 def get_batch_idxs(config, data_set):
     valid_idxs_groups = data_set['valid_idxs_grouped']
-    #Compute number of subgroups (separated by paragraph sizes)
+    # Compute number of subgroups (separated by paragraph sizes)
     nGroups = len(valid_idxs_groups)
     # Choose randomly subgroup of questions (separated by paragraph sizes)
-    group_choice = randint(0,nGroups-1)
+    group_choice = randint(0, nGroups-1)
     valid_idxs = valid_idxs_groups[group_choice]
     # Compute number of questions in subgroup
     nQuestions = len(valid_idxs)
     n = 0
     batch_idxs = set();
-    #Choose randomly batch_size questions from the selected subgroup
+    # Choose randomly batch_size questions from the selected subgroup
     while n < config['train']['batch_size']:
         batch_idxs.add(randint(0, nQuestions-1))
         n = len(batch_idxs)
-    batch_idxs =  [valid_idxs[i] for i in batch_idxs]
+    batch_idxs = [valid_idxs[i] for i in batch_idxs]
     batch_idxs.sort()
     return batch_idxs

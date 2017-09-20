@@ -226,6 +226,25 @@ class Model(object):
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
 
+    def evaluate_all_dev(self, valid_idxs, data_dev):
+        """ Compute F1 and EM for the dev dataset
+
+            Parameters
+            ----------
+            batch_idxs : list of the idxs of each example
+            dataset : the correspondent json file
+
+        """
+        # Combine the input dictionaries for all the features models
+        feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
+        Start_Index, End_Index = self.sess.run([self.Start_Index, self.End_Index], feed_dict=feed_dict)
+        # Write the results to Tensorboard
+        return Start_Index, End_Index
+
+    def _load(self):  # To load a checkpoint
+        # TODO: Add structure to save/load different checkpoints.
+        self.saver.restore(self.sess, self.directory + 'model.ckpt')
+
     def _embed_scaling(self, X):
         length_X = X.get_shape()[1]  # number of words in the passage
         # If the word2vec vector is scaled by a matrix
