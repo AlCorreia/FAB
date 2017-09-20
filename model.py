@@ -180,7 +180,7 @@ class Model(object):
                                        feed_dict=feed_dict)
 
             # Write the results to Tensorboard
-            EM, F1, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
+            EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
             self.EM_train.append(EM)
             self.F1_train.append(F1)
             summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
@@ -195,7 +195,7 @@ class Model(object):
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
             Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
-            EM, F1, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
+            EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
 
         #To plot averaged EM and F1 during training
         self.EM_train.append(EM)
@@ -215,11 +215,12 @@ class Model(object):
 
         summary, max_x, max_q, Start_Index, End_Index, global_step = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step], feed_dict=feed_dict)
         # Write the results to Tensorboard
-        EM_dev, F1_dev, y1_correct, y2_correct = EM_and_F1(self.answer, [Start_Index, End_Index])
+        EM_dev, F1_dev, y1_correct, y2_correct, y2_greater_y1_correct = EM_and_F1(self.answer, [Start_Index, End_Index])
         self.EM_dev.append(EM_dev)
         self.F1_dev.append(F1_dev)
         self.y1_correct_dev.append(y1_correct)
         self.y2_correct_dev.append(y2_correct)
+        self.y2_greater_y1_correct.append(y2_greater_y1_correct)
         self.dev_writer.add_summary(summary, global_step=global_step)
 
     def _load(self):  # To load a checkpoint
@@ -664,6 +665,32 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
+    def _cross_sel(self, Q, X, mask, scope):
+        """ Attention over attention for computing y1"""
+        with tf.variable_scope(scope):
+            length_Q = Q.get_shape()[1]
+            Q = tf.expand_dims(Q, 2)
+            Q.set_shape([self.Bs, length_Q, 1, self.WEAs])
+            #Scale question matrix with a matrix W*Q
+            Q_Scaled = tf.squeeze(tf.layers.conv2d(Q,
+                                              filters=self.WEAs,
+                                              kernel_size=1,
+                                              strides=1,
+                                              name='W'))
+            Q = tf.squeeze(Q)
+            Q.set_shape([self.Bs, length_Q, self.WEAs])
+            logits = tf.reduce_mean(tf.matmul(X, tf.transpose(Q_Scaled, [0, 2, 1])), axis = 2)
+
+            # Sofmax for attention of Q in X: softmax(X*W*Q)
+            softmax_X = tf.nn.softmax(
+                tf.add(
+                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                    tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)),
+                dim=2)
+        return softmax_X, logits
+
+
+
     def _AoA_sel(self, Q, X, mask, scope):
         """ Attention over attention for computing y1"""
         with tf.variable_scope(scope):
@@ -685,21 +712,21 @@ class Model(object):
                 tf.add(
                     tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
                     tf.multiply(1.0 - mask['xq'], VERY_LOW_NUMBER)),
-                dim=2)
-            logits = tf.matmul(X, tf.transpose(Q, [0,2,1]))
+                dim=1)
+
 
             # Sofmax for attention of X in Q: softmax((X*W*Q)^T)
             softmax_Q = tf.nn.softmax(
                 tf.add(
                     tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
                     tf.multiply(1.0 - mask['xq'], VERY_LOW_NUMBER)),
-                dim=1)
-            softmax_Q = tf.expand_dims(tf.reduce_mean(softmax_Q, axis=1), 1)
+                dim=2)
+            softmax_Q = tf.expand_dims(tf.reduce_mean(softmax_Q, axis=1), 2) #the add of the 2nd dim is analogous to transpose.
             #Compute Attention over Attention
             logits_y = tf.squeeze(
                             tf.matmul(
                                 softmax_X,
-                                tf.transpose(softmax_Q, [0,2,1])), axis=-1)
+                                softmax_Q), axis=-1)
             #Final mask is applied
             softmax_y = tf.nn.softmax(
                 tf.add(
@@ -715,6 +742,8 @@ class Model(object):
             output, logits = self._split_layer_sel(Q, X, mask, scope)
         elif method == "AoA":
             output, logits = self._AoA_sel(Q, X, mask, scope)
+        elif method == "cross":
+            output, logits = self._cross_sel(Q, X, mask, scope)
         return output, logits
 
     def _build_forward_Attention(self):

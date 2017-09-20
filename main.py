@@ -40,7 +40,7 @@ def main(config):
             model.train(batch_idxs, data)
             # every n steps check F1 and EM, based on dev dataset
             if i % config['train']['steps_to_save'] == 0:
-                EM_dev, F1_dev, y1_correct_dev, y2_correct_dev = evaluate(config, model, data_dev)
+                EM_dev, F1_dev, y1_correct_dev, y2_correct_dev, y2_greater_y1_correct = evaluate(config, model, data_dev)
                 # Compute EM and F1 train averaging the last 500 steps
                 EM_train, F1_train = [np.mean(model.EM_train[-500:]), np.mean(model.F1_train[-500:])]
                 model.EM_train = []
@@ -67,12 +67,15 @@ def main(config):
                 summary_y2_correct = tf.Summary(
                     value=[tf.Summary.Value(tag='y2_cor',
                                             simple_value=y2_correct_dev)])
+                summary_y2_correct = tf.Summary(
+                    value=[tf.Summary.Value(tag='y2>=y1_cor',
+                                            simple_value=y2_greater_y1_correct)])
                 model.dev_writer.add_summary(summary_F1, i)
                 model.dev_writer.add_summary(summary_EM, i)
                 model.dev_writer.add_summary(summary_y1_correct, i)
                 model.dev_writer.add_summary(summary_y2_correct, i)
                 # TODO Make this print more readable than now
-                print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+' y1:'+str(y1_correct_dev)+' y2:'+str(y2_correct_dev)+'\n')
+                print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+' y1:'+str(y1_correct_dev)+' y2:'+str(y2_correct_dev)+' y2>=y1:'+str(y2_greater_y1_correct)+'\n')
             if i % config['train']['steps_to_email'] == 0 and i > 0:
                 Start_Index, End_Index = model.evaluate_all_dev(valid_idxs[0:config['train']['batch_size']], data_dev)
                 create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index)
@@ -89,6 +92,7 @@ def evaluate(config, model, data_dev):
     model.F1_dev = []
     model.y1_correct_dev = []
     model.y2_correct_dev = []
+    model.y2_greater_y1_correct=[]
     valid_idxs = data_dev['valid_idxs']
     for i in tqdm(range(math.floor(
             len(data_dev['valid_idxs'])/config['train']['batch_size'])),
@@ -97,7 +101,7 @@ def evaluate(config, model, data_dev):
         end = (i+1)*config['train']['batch_size']
         batch_idxs = valid_idxs[init:end]
         model.evaluate(batch_idxs, data_dev)
-    return [sum(model.EM_dev)/len(model.EM_dev), sum(model.F1_dev)/len(model.F1_dev), sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev)]
+    return [sum(model.EM_dev)/len(model.EM_dev), sum(model.F1_dev)/len(model.F1_dev), sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev), sum(model.y2_greater_y1_correct)/len(model.y2_greater_y1_correct)]
 
 
 if __name__ == '__main__':

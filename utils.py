@@ -53,7 +53,6 @@ def send_mail(attach_dir, subject):
     outer['To'] = COMMASPACE.join(recipients)
     outer['From'] = sender
     outer.preamble = 'You will not see this in a MIME-aware mail reader.\n'
-
     # List of attachments
     attachments = attach_dir
 
@@ -108,6 +107,7 @@ def EM_and_F1(answer, answer_est):
     F1 = []
     y1_correct = []
     y2_correct = []
+    y2_greater_y1_correct = []
     y1_est, y2_est = answer_est
     y1, y2 = answer
     for i in range(len(y1_est)):
@@ -125,8 +125,9 @@ def EM_and_F1(answer, answer_est):
             a = TT/(TT+FT)
             b = TT/(TT+FF)
             F1_i.append(2/(1/a+1/b) if a != 0 and b != 0 else 0)
+        y2_greater_y1_correct.append(1.0 if y2_est[i] >= y1_est[i] else 0.0)
         y1_correct.append(max(y1_correct_i))
         y2_correct.append(max(y2_correct_i))
         EM.append(max(EM_i))
         F1.append(max(F1_i))
-    return [sum(EM)/len(EM), sum(F1)/len(F1), sum(y1_correct)/len(y1_correct), sum(y2_correct)/len(y2_correct)]
+    return [sum(EM)/len(EM), sum(F1)/len(F1), sum(y1_correct)/len(y1_correct), sum(y2_correct)/len(y2_correct), sum(y2_greater_y1_correct)/len(y2_greater_y1_correct)]
