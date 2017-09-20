@@ -388,6 +388,16 @@ class Model(object):
             Q = tf.split(Q, num_or_size_splits=self.MHs, axis=2)
             K = tf.split(K, num_or_size_splits=self.MHs, axis=2)
             V = tf.split(V, num_or_size_splits=self.MHs, axis=2)
+
+            if self.config['model']['max_out']:
+                Q = tf.expand_dims(tf.reduce_max(Q, axis=0), axis=0)
+                K = tf.expand_dims(tf.reduce_max(K, axis=0), axis=0)
+                V = tf.expand_dims(tf.reduce_max(V, axis=0), axis=0)
+                MHs = 1
+                WEPs = int(self.WEPs/self.MHs)
+            else:
+                MHs = self.MHs
+                WEPs = self.WEPs
             # Compute transpose of K for multiplyting Q*K^T
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
@@ -407,9 +417,9 @@ class Model(object):
             x_attention_concat = tf.concat(
                 tf.unstack(x_attention,
                            axis=0,
-                           num=self.MHs),
+                           num=MHs),
                 axis=2)
-            x_attention_concat.set_shape([self.Bs, length_X2, self.WEPs])
+            x_attention_concat.set_shape([self.Bs, length_X2, int(WEPs)])
             # Compute softmax(Q*K^T)*V*WO
             x_final = tf.squeeze(
                 tf.layers.conv2d(tf.expand_dims(x_attention_concat, 2),
@@ -668,7 +678,7 @@ class Model(object):
                                               name='W'))
             Q = tf.squeeze(Q)
             Q.set_shape([self.Bs, length_Q, self.WEAs])
-            logits = tf.matmul(X, tf.transpose(Q_Scaled, [0,2,1]))
+            logits = tf.matmul(X, tf.transpose(Q_Scaled, [0, 2, 1]))
 
             # Sofmax for attention of Q in X: softmax(X*W*Q)
             softmax_X = tf.nn.softmax(

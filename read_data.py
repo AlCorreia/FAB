@@ -264,9 +264,9 @@ def data_filter_func(config, data, shared):
     # Compute the n_chunks groups of questions
     # TODO: I guess there might be a more elegant way than using this for if else
     for i in range(n_chunks):
-        if remainder> 0:
+        if remainder > 0:
             sub_list = ordered_valid_idxs[index:index+chunk_size+1]
-            index = index+chunk_size+1
+            index = index + chunk_size + 1
             remainder = remainder - 1
         else:
             sub_list = ordered_valid_idxs[index:index+chunk_size]
