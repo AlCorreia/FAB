@@ -431,7 +431,7 @@ class Model(object):
             # Add Dropout
             x_final_dropout = tf.nn.dropout(
                 x_final,
-                keep_prob=1.0-tf.to_float(self.is_training)*self.config['train']['dropout_att_sublayer'])
+                keep_prob=self.keep_prob)
         return x_final_dropout
 
     def _layer_normalization(self, x, gain=1.0, scope=None):
@@ -487,7 +487,7 @@ class Model(object):
             # Apply Dropout
             output = tf.nn.dropout(
                 output,
-                keep_prob=1.0 - tf.to_float(self.is_training)*self.config['train']['dropout_att_sublayer'])
+                keep_prob=self.keep_prob)
         return output
 
     def _one_layer(self, Q, X, mask, scope, switch=False):
