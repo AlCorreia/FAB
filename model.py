@@ -409,10 +409,10 @@ class Model(object):
             softmax = tf.nn.softmax(
                 tf.add(
                     tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
-                    tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
+                    tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob = self.keep_prob_attention), VERY_LOW_NUMBER)),
                 dim=-1)
             # Final mask is applied
-            softmax = tf.nn.dropout(tf.multiply(mask, softmax), keep_prob=self.keep_prob_attention);
+            softmax = tf.multiply(mask, softmax)
 
             # Multihead attention
             # WV must be split into multi_head_size smaller matrices
@@ -803,7 +803,7 @@ class Model(object):
                     else:  # If the scaling matrix was not previously trained
                         # In order to be orthonormal
                         weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
-                        _, _, U = np.linalg.svd(weights_init, full_matrices=False)
+                        U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
                                     initializer=U)
