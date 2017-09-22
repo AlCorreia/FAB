@@ -2,8 +2,8 @@
 	"glove":{
 		"Comment_":"#Specifications of the glove model to use",
         	"dir":"./data/glove",
-        	"corpus":"6B",
-        	"vec_size":"100",
+        	"corpus":"840B",
+        	"vec_size":"300",
         	"db":"write-math"
     },
 	"directories":{
@@ -17,7 +17,6 @@
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
 		"run": false,
 		"n_chunks": 30,
-		"lower_word": true,
 		"finetune": false,
 		"data_filter": true,
 		"word_count_th": 10,
@@ -29,32 +28,32 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID66_max_out",
+                "name": "ID71_max_out",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
 		"evaluate_dev": true,
-		"max_out": true,
+		"max_out": false,
 		"forget_bias":1.0,
 		"n_hidden": 100,
 		"char_vocabulary_size":30,
 		"input_keep_prob":0.9,
 		"share_lstm_weights":true,
-		"encoder_low_freq":10,
-		"encoder_high_freq": 2000.0,
-		"encoder_learn_freq": true,
+		"encoder_low_freq":1.0,
+		"encoder_high_freq": 10000.0,
+		"encoder_learn_freq": false,
                 "encoder_step_skip_size": -75.0,
                 "encoder_no_cross": true,
 		"full_trainable_encoder": false,
 		"multi_head_size": 4,
-		"attention_emb_size": 100,
-		"FeedForward_Hidden_Size": 264,
+		"attention_emb_size": 300,
+		"FeedForward_Hidden_Size": 300,
 		"process_emb_size": 100,
                 "time_encoding": true,
 		"n_pre_layer": 2,
-		"n_post_layer":2,
-        	"y1_sel":"AoA",
-        	"y2_sel":"AoA"
+		"n_post_layer":1,
+        	"y1_sel":"linear",
+        	"y2_sel":"linear"
 	},
 	"train":{
 		"check_available_memory":  false,
@@ -66,8 +65,9 @@
 		"type": "Adadelta",
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
 		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
-		"dropout_att_encoder": 0.10,
-                "dropout_att_sublayer": 0.10,
+		"dropout_encoder": 0.90,
+                "dropout_sublayer": 0.90,
+                "dropout_attention": 0.90,
 		"label_smoothing": 0.9
 	},
 	"weights_init":{
@@ -75,11 +75,11 @@
 		"pre_trained_scaling_matrix": false
 	},
 	"model_options":{
-		"norm_layer":false,
+		"norm_layer":true,
         	"symmetric": false,
         	"switching_model":true,
-        	"word2vec_matrix_scaling": true,
-        	"word2vec_vector_scaling": false,
+        	"word2vec_matrix_scaling": false,
+        	"word2vec_vector_scaling": true,
                 "encoder_normalization": false
 				}
 }

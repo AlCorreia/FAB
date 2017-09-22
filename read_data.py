@@ -79,7 +79,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     answerss = []
     p = []
     paragraph_len, question_len = [], []
-    word_counter, char_counter, lower_word_counter = Counter(), Counter(), Counter()
+    word_counter, char_counter = Counter(), Counter()
     start_ai = int(round(len(source_data['data']) * start_ratio))
     stop_ai = int(round(len(source_data['data']) * stop_ratio))
     for ai, article in enumerate(tqdm(source_data['data'][start_ai:stop_ai])):
@@ -103,7 +103,6 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
             for xij in xi:
                 word_counter[xij] += len(para['qas'])
-                lower_word_counter[xij.lower()] += len(para['qas'])
                 for xijk in xij:
                     char_counter[xijk] += len(para['qas'])
 
@@ -137,7 +136,6 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     cyi.append([cyi0, cyi1])
                 for qij in qi:
                     word_counter[qij] += 1
-                    lower_word_counter[qij.lower()] += 1
                     for qijk in qij:
                         char_counter[qijk] += 1
                 q.append(qi)
@@ -155,14 +153,13 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # if args.debug:
             #     break
     word2vec_dict = get_word2vec(config, word_counter)
-    lower_word2vec_dict = get_word2vec(config, lower_word_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len}
     shared = {'x': x, 'cx': cx, 'p': p,
-              'word_counter': word_counter, 'char_counter': char_counter, 'lower_word_counter': lower_word_counter,
-              'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
+              'word_counter': word_counter, 'char_counter': char_counter,
+              'word2vec': word2vec_dict}
 
     print("saving ...")
     save(config, data, shared, out_name)
@@ -187,39 +184,33 @@ def read_data(config, data_type, ref, data_filter = None):
         valid_idxs, valid_idxs_grouped = range(num_examples), [range(num_examples)]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
-    if not ref: #TODO: why there is this "if"? If not useful, delete
-        word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
-        word_counter = shared['lower_word_counter'] if config['pre']['lower_word'] else shared['word_counter']
-        char_counter = shared['char_counter']
-        if config['pre']['finetune']: #false
-            shared['unk_word2idx'] = {word: idx + 2 for idx, word in
-                                  enumerate(word for word, count in word_counter.items()
-                                            if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
-        else:
-            assert config['pre']['known_if_glove']
-            assert config['pre']['use_glove_for_unk']
-            shared['unk_word2idx'] = {word: idx + 2 for idx, word in #add 2 toUNK and NULL
-                                  enumerate(word for word, count in word_counter.items()
-                                            if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
-        shared['char2idx'] = {char: idx + 2 for idx, char in
-                              enumerate(char for char, count in char_counter.items()
-                                      if count > config['pre']['char_count_th'])} #threshold =50
-        NULL = "-NULL-"
-        UNK = "-UNK-"
-        shared['unk_word2idx'][NULL] = 0
-        shared['unk_word2idx'][UNK] = 1
-        shared['char2idx'][NULL] = 0
-        shared['char2idx'][UNK] = 1
-        #json.dump({'unk_word2idx': shared['unk_word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w')) why to use this line?
+    word2vec_dict = shared['word2vec']
+    word_counter = shared['word_counter']
+    char_counter = shared['char_counter']
+    if config['pre']['finetune']: #false
+        shared['unk_word2idx'] = {word: idx + 2 for idx, word in
+                              enumerate(word for word, count in word_counter.items()
+                                        if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
     else:
-        new_shared = json.load(open(shared_path, 'r'))
-        for key, val in new_shared.items():
-            shared[key] = val
+        assert config['pre']['known_if_glove']
+        assert config['pre']['use_glove_for_unk']
+        shared['unk_word2idx'] = {word: idx + 2 for idx, word in #add 2 to UNK and NULL
+                              enumerate(word for word, count in word_counter.items()
+                                        if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
+    shared['char2idx'] = {char: idx + 2 for idx, char in
+                          enumerate(char for char, count in char_counter.items()
+                                  if count > config['pre']['char_count_th'])} #threshold =50
+    NULL = "-NULL-"
+    UNK = "-UNK-"
+    shared['unk_word2idx'][NULL] = 0
+    shared['unk_word2idx'][UNK] = 1
+    shared['char2idx'][NULL] = 0
+    shared['char2idx'][UNK] = 1
 
     if config['pre']['use_glove_for_unk']:
         # create word2idx for uknown and known words
         word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
-        word2vec_dict = shared['lower_word2vec'] if config['pre']['lower_word'] else shared['word2vec']
+        word2vec_dict = shared['word2vec']
 
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
 

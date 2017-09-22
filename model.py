@@ -34,7 +34,9 @@ class Model(object):
         # Define global step and learning rate decay
         self.global_step = tf.Variable(0, trainable=False)
         # Define a placeholder for the dropout
-        self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='dropout')
+        self.keep_prob_sublayer = tf.placeholder_with_default(1.0, shape=(), name='dropout_sublayer')
+        self.keep_prob_encoder = tf.placeholder_with_default(1.0, shape=(), name='dropout_encoder')
+        self.keep_prob_attention = tf.placeholder_with_default(1.0, shape=(), name='dropout_attention')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -173,8 +175,9 @@ class Model(object):
         feed_dict = self.get_feed_dict(batch_idxs,
                                        is_training=True,
                                        dataset=dataset)
-        feed_dict['dropout:0'] = self.config['model']['input_keep_prob']
-
+        feed_dict['dropout_sublayer:0'] = self.config['train']['dropout_sublayer']
+        feed_dict['dropout_encoder:0'] = self.config['train']['dropout_encoder']
+        feed_dict['dropout_attention:0'] = self.config['train']['dropout_attention']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -338,8 +341,8 @@ class Model(object):
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
         q_encoded = tf.add(Q, encoder_q)
-        x_encoded = tf.nn.dropout(x_encoded, keep_prob=1.0 - tf.to_float(self.is_training)*self.config['train']['dropout_att_encoder'])
-        q_encoded = tf.nn.dropout(q_encoded,keep_prob=1.0 - tf.to_float(self.is_training)*self.config['train']['dropout_att_encoder'])
+        x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
+        q_encoded = tf.nn.dropout(q_encoded,keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
     def _attention_layer(self, X1, mask, X2=None, scope=None):
@@ -409,7 +412,7 @@ class Model(object):
                     tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                 dim=-1)
             # Final mask is applied
-            softmax = tf.multiply(mask, softmax)
+            softmax = tf.nn.dropout(tf.multiply(mask, softmax), keep_prob=self.keep_prob_attention);
 
             # Multihead attention
             # WV must be split into multi_head_size smaller matrices
@@ -431,7 +434,7 @@ class Model(object):
             # Add Dropout
             x_final_dropout = tf.nn.dropout(
                 x_final,
-                keep_prob=self.keep_prob)
+                keep_prob=self.keep_prob_sublayer)
         return x_final_dropout
 
     def _layer_normalization(self, x, gain=1.0, scope=None):
@@ -487,7 +490,7 @@ class Model(object):
             # Apply Dropout
             output = tf.nn.dropout(
                 output,
-                keep_prob=self.keep_prob)
+                keep_prob=self.keep_prob_sublayer)
         return output
 
     def _one_layer(self, Q, X, mask, scope, switch=False):
@@ -1041,15 +1044,28 @@ class Model(object):
         y2 = []
         label_smoothing = self.config['train']['label_smoothing']
 
-        def word2id(word):  # to convert a word to its respective id
-            if self.config['pre']['lower_word']:
-                word = word.lower()
-            if word in dataset['shared']['known_word2idx']:
-                return dataset['shared']['known_word2idx'][word] + self.WVs
-            elif word in dataset['shared']['unk_word2idx']:
-                return dataset['shared']['unk_word2idx'][word]
+
+        def wordsearch(word,known_or_unknown):
+            if word in dataset['shared'][known_or_unknown]:
+                return dataset['shared'][known_or_unknown][word]
+            elif word.capitalize() in dataset['shared'][known_or_unknown]:
+                return dataset['shared'][known_or_unknown][word.capitalize()]
+            elif word.lower() in dataset['shared'][known_or_unknown]:
+                return dataset['shared'][known_or_unknown][word.lower()]
+            elif word.upper() in dataset['shared'][known_or_unknown]:
+                return dataset['shared'][known_or_unknown][word.upper()]
             else:
-                return 1  # unknown word
+                return 0
+
+        def word2id(word):  # to convert a word to its respective id
+            ID = wordsearch(word,'known_word2idx')
+            if ID !=0: #if it was found
+                return ID + self.WVs
+            ID = wordsearch(word,'unk_word2idx')
+            if ID !=0: #if it was found
+                return ID
+            #if it was not found in any 
+            return 1 #unknown word
 
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
