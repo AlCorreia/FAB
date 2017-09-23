@@ -46,7 +46,7 @@ def send_mail(attach_dir, subject,body):
     COMMASPACE = ', '
     sender = 'jorgematlab93@gmail.com'
     gmail_password = 'AmeMatlab12.'
-    recipients = ['jorge.silva93@gmail.com'], 'alvaro.hc.correia@gmail.com']
+    recipients = ['jorge.silva93@gmail.com', 'alvaro.hc.correia@gmail.com']
 
     # Create the enclosing (outer) message
     outer = MIMEMultipart()
