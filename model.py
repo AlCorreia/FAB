@@ -37,6 +37,8 @@ class Model(object):
         self.keep_prob_sublayer = tf.placeholder_with_default(1.0, shape=(), name='dropout_sublayer')
         self.keep_prob_encoder = tf.placeholder_with_default(1.0, shape=(), name='dropout_encoder')
         self.keep_prob_attention = tf.placeholder_with_default(1.0, shape=(), name='dropout_attention')
+        self.keep_prob_concat = tf.placeholder_with_default(1.0, shape=(), name='dropout_concat')
+        self.keep_prob_Relu = tf.placeholder_with_default(1.0, shape=(), name='dropout_Relu')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -178,6 +180,8 @@ class Model(object):
         feed_dict['dropout_sublayer:0'] = self.config['train']['dropout_sublayer']
         feed_dict['dropout_encoder:0'] = self.config['train']['dropout_encoder']
         feed_dict['dropout_attention:0'] = self.config['train']['dropout_attention']
+        feed_dict['dropout_concat:0'] = self.config['train']['dropout_concat']
+        feed_dict['dropout_Relu:0'] = self.config['train']['dropout_Relu']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -341,8 +345,9 @@ class Model(object):
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
         q_encoded = tf.add(Q, encoder_q)
-        x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
-        q_encoded = tf.nn.dropout(q_encoded,keep_prob=self.keep_prob_encoder)
+        if self.config['train']['dropout_encoder']<1.0: #This is done to save memory if dropout is not used
+            x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
+            q_encoded = tf.nn.dropout(q_encoded,keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
     def _attention_layer(self, X1, mask, X2=None, scope=None):
@@ -406,11 +411,18 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
-            softmax = tf.nn.softmax(
-                tf.add(
-                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
-                    tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob = self.keep_prob_attention), VERY_LOW_NUMBER)),
-                dim=-1)
+            if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
+                softmax = tf.nn.softmax(
+                    tf.add(
+                        tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob = self.keep_prob_attention), VERY_LOW_NUMBER)),
+                    dim=-1)
+            else:
+                softmax = tf.nn.softmax(
+                    tf.add(
+                        tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                        tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
+                    dim=-1)
             # Final mask is applied
             softmax = tf.multiply(mask, softmax)
 
@@ -424,6 +436,8 @@ class Model(object):
                            num=MHs),
                 axis=2)
             x_attention_concat.set_shape([self.Bs, length_X2, int(WEPs)])
+            if self.config['train']['dropout_concat']<1.0: #This is done to save memory if dropout is not used
+                x_attention_concat = tf.nn.dropout(x_attention_concat, keep_prob=self.keep_prob_concat)
             # Compute softmax(Q*K^T)*V*WO
             x_final = tf.squeeze(
                 tf.layers.conv2d(tf.expand_dims(x_attention_concat, 2),
@@ -432,10 +446,11 @@ class Model(object):
                                  strides=1,
                                  name='Att_Comp'))
             # Add Dropout
-            x_final_dropout = tf.nn.dropout(
-                x_final,
-                keep_prob=self.keep_prob_sublayer)
-        return x_final_dropout
+            if self.config['train']['dropout_sublayer']<1.0: #This is done to save memory if dropout is not used
+                x_final = tf.nn.dropout(
+                    x_final,
+                    keep_prob=self.keep_prob_sublayer)
+        return x_final
 
     def _layer_normalization(self, x, gain=1.0, scope=None):
         with tf.variable_scope(scope):
@@ -477,6 +492,8 @@ class Model(object):
                                          use_bias=True,
                                          activation=tf.nn.relu,
                                          name='affine_op_1')
+            if self.config['train']['dropout_Relu']<1.0: #This is done to save memory if dropout is not used
+                affine_op = tf.nn.dropout(affine_op,keep_prob=self.keep_prob_Relu)
             X = tf.squeeze(X)
             X.set_shape([self.Bs, length_X, self.WEAs])
             # Second affine oepration.
@@ -488,9 +505,10 @@ class Model(object):
                                                  use_bias=True,
                                                  name='affine_op_2'))
             # Apply Dropout
-            output = tf.nn.dropout(
-                output,
-                keep_prob=self.keep_prob_sublayer)
+            if self.config['train']['dropout_sublayer']<1.0: #This is done to save memory if dropout is not used
+                output = tf.nn.dropout(
+                    output,
+                    keep_prob=self.keep_prob_sublayer)
         return output
 
     def _one_layer(self, Q, X, mask, scope, switch=False):
@@ -617,6 +635,24 @@ class Model(object):
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+        return output, logits
+
+    def _linear_sel_y2(self, X, y1_sel, mask, scope):
+        """ Select one vector among n vectors by max(w*X) """
+        with tf.variable_scope(scope):
+            W = tf.get_variable('W',
+                                shape=[self.WEAs, 1],
+                                dtype=tf.float32)
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),0), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 1)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected+1,range_x), tf.float32)+mask['x']-1.0),tf.float32)
+
+            logits = tf.reshape(
+                        tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
+                        [self.Bs, -1])  # [Bs, , 1]
+            output = tf.nn.softmax(
+                        tf.add(logits,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
     def _split_layer_sel(self, Q, X, mask, scope):
@@ -747,6 +783,8 @@ class Model(object):
             output, logits = self._AoA_sel(Q, X, mask, scope)
         elif method == "cross":
             output, logits = self._cross_sel(Q, X, mask, scope)
+        elif method == "linear_y2":
+            output, logits = self._linear_sel_y2(X, y1_sel, mask, scope)
         return output, logits
 
     def _build_forward_Attention(self):
@@ -846,9 +884,10 @@ class Model(object):
         self.yp2, self.logits_y2 = self._y_selection(
                                                Q=q[-1],
                                                X=x[-1],
-                                               scope='y2_sel',
                                                mask=mask,
-                                               method=config['model']['y2_sel'])
+                                               scope='y2_sel',
+                                               method=config['model']['y2_sel'],
+                                               y1_sel=self.yp)
         self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
         self.End_Index = tf.argmax(self.logits_y2, axis=-1)
 

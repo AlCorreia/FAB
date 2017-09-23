@@ -74,13 +74,14 @@ def main(config):
                 model.dev_writer.add_summary(summary_EM, i)
                 model.dev_writer.add_summary(summary_y1_correct, i)
                 model.dev_writer.add_summary(summary_y2_correct, i)
+                last_info = '\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+' y1:'+str(y1_correct_dev)+' y2:'+str(y2_correct_dev)+' y2>=y1:'+str(y2_greater_y1_correct)+'\n'
                 # TODO Make this print more readable than now
-                print('\nF1:'+str(F1_dev)+' EM:'+str(EM_dev)+' y1:'+str(y1_correct_dev)+' y2:'+str(y2_correct_dev)+' y2>=y1:'+str(y2_greater_y1_correct)+'\n')
+                print(last_info)
             if i % config['train']['steps_to_email'] == 0 and i > 0:
                 valid_idxs = data_dev['valid_idxs']
                 Start_Index, End_Index = model.evaluate_all_dev(valid_idxs[0:config['train']['batch_size']], data_dev)
                 create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index)
-                send_mail(attach_dir=['./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'])
+                send_mail(attach_dir=['./config.json','./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'], body=last_info)
     # To check the exact match and F1 of the model for dev
     if config['model']['evaluate_dev']:
         EM_dev, F1_dev = evaluate(config, model, data_dev)

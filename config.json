@@ -28,7 +28,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID71_max_out",
+                "name": "ID75",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -47,7 +47,7 @@
 		"full_trainable_encoder": false,
 		"multi_head_size": 4,
 		"attention_emb_size": 300,
-		"FeedForward_Hidden_Size": 300,
+		"FeedForward_Hidden_Size": 150,
 		"process_emb_size": 100,
                 "time_encoding": true,
 		"n_pre_layer": 2,
@@ -67,19 +67,21 @@
 		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
 		"dropout_encoder": 0.90,
                 "dropout_sublayer": 0.90,
-                "dropout_attention": 0.90,
-		"label_smoothing": 0.9
+                "dropout_attention": 1.0,
+		"dropout_Relu": 0.90,
+		"dropout_concat": 0.90,
+		"label_smoothing": 0.90
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",
 		"pre_trained_scaling_matrix": false
 	},
 	"model_options":{
-		"norm_layer":true,
+		"norm_layer": true,
         	"symmetric": false,
         	"switching_model":true,
-        	"word2vec_matrix_scaling": false,
-        	"word2vec_vector_scaling": true,
+        	"word2vec_matrix_scaling": true,
+        	"word2vec_vector_scaling": false,
                 "encoder_normalization": false
 				}
 }

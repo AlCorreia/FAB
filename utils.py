@@ -9,6 +9,7 @@ import pdb
 import smtplib
 from email import encoders
 from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
@@ -41,11 +42,11 @@ def process_tokens(temp_tokens):
 	return tokens
 
 
-def send_mail(attach_dir, subject):
+def send_mail(attach_dir, subject,body):
     COMMASPACE = ', '
     sender = 'jorgematlab93@gmail.com'
     gmail_password = 'AmeMatlab12.'
-    recipients = ['jorge.silva93@gmail.com', 'alvaro.hc.correia@gmail.com']
+    recipients = ['jorge.silva93@gmail.com'], 'alvaro.hc.correia@gmail.com']
 
     # Create the enclosing (outer) message
     outer = MIMEMultipart()
@@ -53,6 +54,7 @@ def send_mail(attach_dir, subject):
     outer['To'] = COMMASPACE.join(recipients)
     outer['From'] = sender
     outer.preamble = 'You will not see this in a MIME-aware mail reader.\n'
+    outer.attach(MIMEText(body, 'plain'))
     # List of attachments
     attachments = attach_dir
 
