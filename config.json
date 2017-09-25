@@ -72,7 +72,8 @@
                 "dropout_attention": 0.7,
 		"dropout_Relu": 0.70,
 		"dropout_FF": 0.90,
-		"label_smoothing": 0.90
+		"label_smoothing": 0.90,
+		"device":"0"
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",

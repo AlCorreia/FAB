@@ -122,7 +122,7 @@ class Model(object):
                 decay_rate=config['train']['Adadelta']['decay_rate'],
                 staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(
-                learning_rate=self.learning_rate, 
+                learning_rate=self.learning_rate,
                 rho = config['train']['Adadelta']['rho'])
 
         elif config['train']['type'] == "Adam":
@@ -151,9 +151,11 @@ class Model(object):
         # self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
 
         # Define a session for the model
-        self.sess = tf.Session()
+        config_gpu = tf.ConfigProto(log_device_placement=True)
+        config_gpu.gpu_options.visible_device_list=self.config['train']['device']
+        self.sess = tf.Session(tf.Session(config=config_gpu))
         # Add ops to save and restore all the variables.
-        self.saver = tf.train.Saver(max_to_keep=100) # not to delete previous checkpoints
+        self.saver = tf.train.Saver(max_to_keep=100)  # not to delete previous checkpoints
         # Initialize all variables
         if not config['model']['load_checkpoint']:
                 self.sess.run(tf.global_variables_initializer())
@@ -427,7 +429,7 @@ class Model(object):
                         tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                     dim=-1)
             # Final mask is applied
-            if self.config['train']['dropout_attention_post_softmax']<1.0: 
+            if self.config['train']['dropout_attention_post_softmax']<1.0:
                 #To normalize softmax sum to 1.
                 softmax = 1/self.keep_prob_attention_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), self.keep_prob_attention_post_softmax)
             else:
@@ -1112,7 +1114,7 @@ class Model(object):
             ID = wordsearch(word,'unk_word2idx')
             if ID !=0: #if it was found
                 return ID
-            #if it was not found in any 
+            #if it was not found in any
             return 1 #unknown word
 
         # Padding for passages, questions and answers.
