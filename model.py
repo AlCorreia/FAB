@@ -34,11 +34,13 @@ class Model(object):
         # Define global step and learning rate decay
         self.global_step = tf.Variable(0, trainable=False)
         # Define a placeholder for the dropout
-        self.keep_prob_sublayer = tf.placeholder_with_default(1.0, shape=(), name='dropout_sublayer')
+        self.keep_prob_attention_pre_softmax = tf.placeholder_with_default(1.0, shape=(), name='dropout_attention_pre_softmax')
+        self.keep_prob_attention_post_softmax = tf.placeholder_with_default(1.0, shape=(), name='dropout_attention_post_softmax')
         self.keep_prob_encoder = tf.placeholder_with_default(1.0, shape=(), name='dropout_encoder')
         self.keep_prob_attention = tf.placeholder_with_default(1.0, shape=(), name='dropout_attention')
         self.keep_prob_concat = tf.placeholder_with_default(1.0, shape=(), name='dropout_concat')
         self.keep_prob_Relu = tf.placeholder_with_default(1.0, shape=(), name='dropout_Relu')
+        self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -120,7 +122,8 @@ class Model(object):
                 decay_rate=config['train']['Adadelta']['decay_rate'],
                 staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(
-                learning_rate=self.learning_rate)
+                learning_rate=self.learning_rate, 
+                rho = config['train']['Adadelta']['rho'])
 
         elif config['train']['type'] == "Adam":
 		    # Decay_Rate is positive and therefore the - sign in this equation.
@@ -134,8 +137,7 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
-        self.train_step = optimize_loss(self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer=self.config['train']['type'],
-        summaries=["gradients"])
+        self.train_step = optimize_loss (self.loss, global_step=self.global_step, optimizer=self.optimizer,summaries=["gradients"], learning_rate = None)
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
@@ -177,11 +179,13 @@ class Model(object):
         feed_dict = self.get_feed_dict(batch_idxs,
                                        is_training=True,
                                        dataset=dataset)
-        feed_dict['dropout_sublayer:0'] = self.config['train']['dropout_sublayer']
+        feed_dict['dropout_attention_pre_softmax:0'] = self.config['train']['dropout_attention_pre_softmax']
+        feed_dict['dropout_attention_post_softmax:0'] = self.config['train']['dropout_attention_post_softmax']
         feed_dict['dropout_encoder:0'] = self.config['train']['dropout_encoder']
         feed_dict['dropout_attention:0'] = self.config['train']['dropout_attention']
         feed_dict['dropout_concat:0'] = self.config['train']['dropout_concat']
         feed_dict['dropout_Relu:0'] = self.config['train']['dropout_Relu']
+        feed_dict['dropout_FF:0'] = self.config['train']['dropout_FF']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -410,11 +414,11 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
-            if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_attention_pre_softmax']<1.0: #This is done to save memory if dropout is not used
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
-                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob = self.keep_prob_attention), VERY_LOW_NUMBER)),
+                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=self.keep_prob_attention_pre_softmax), VERY_LOW_NUMBER)),
                     dim=-1)
             else:
                 softmax = tf.nn.softmax(
@@ -423,7 +427,11 @@ class Model(object):
                         tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                     dim=-1)
             # Final mask is applied
-            softmax = tf.multiply(mask, softmax)
+            if self.config['train']['dropout_attention_post_softmax']<1.0: 
+                #To normalize softmax sum to 1.
+                softmax = 1/self.keep_prob_attention_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), self.keep_prob_attention_post_softmax)
+            else:
+                softmax = tf.multiply(mask, softmax)
 
             # Multihead attention
             # WV must be split into multi_head_size smaller matrices
@@ -445,10 +453,10 @@ class Model(object):
                                  strides=1,
                                  name='Att_Comp'))
             # Add Dropout
-            if self.config['train']['dropout_sublayer']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
                 x_final = tf.nn.dropout(
                     x_final,
-                    keep_prob=self.keep_prob_sublayer)
+                    keep_prob=self.keep_prob_attention)
         return x_final
 
     def _layer_normalization(self, x, gain=1.0, scope=None):
@@ -504,10 +512,10 @@ class Model(object):
                                                  use_bias=True,
                                                  name='affine_op_2'))
             # Apply Dropout
-            if self.config['train']['dropout_sublayer']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_FF']<1.0: #This is done to save memory if dropout is not used
                 output = tf.nn.dropout(
                     output,
-                    keep_prob=self.keep_prob_sublayer)
+                    keep_prob=self.keep_prob_FF)
         return output
 
     def _one_layer(self, Q, X, mask, scope, switch=False):
