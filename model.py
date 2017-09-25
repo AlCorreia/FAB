@@ -203,7 +203,6 @@ class Model(object):
         else:
             Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
-
         #To plot averaged EM and F1 during training
         self.EM_train.append(EM)
         self.F1_train.append(F1)
@@ -643,16 +642,15 @@ class Model(object):
             W = tf.get_variable('W',
                                 shape=[self.WEAs, 1],
                                 dtype=tf.float32)
-            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),0), tf.int32)
-            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 1)
-            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected+1,range_x), tf.float32)+mask['x']-1.0),tf.float32)
-
-            logits = tf.reshape(
-                        tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
-                        [self.Bs, -1])  # [Bs, , 1]
-            output = tf.nn.softmax(
-                        tf.add(logits,
-                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32)+mask['x']-1.0),tf.float32)
+            self.y2_corrected = tf.multiply(self.y2,mask_new)
+            logits = tf.add(tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER),
+                        tf.reshape(
+                            tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
+                            [self.Bs, -1]))  # [Bs, , 1]
+            output = tf.nn.softmax(logits)
         return output, logits
 
     def _split_layer_sel(self, Q, X, mask, scope):
@@ -888,8 +886,8 @@ class Model(object):
                                                scope='y2_sel',
                                                method=config['model']['y2_sel'],
                                                y1_sel=self.yp)
-        self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
-        self.End_Index = tf.argmax(self.logits_y2, axis=-1)
+        self.Start_Index = tf.argmax(self.yp, axis=-1)
+        self.End_Index = tf.argmax(self.yp2, axis=-1)
 
     def _build_forward(self):
         """
@@ -1043,8 +1041,8 @@ class Model(object):
             self.logits_y2 = logits_y2
             self.yp = yp
             self.yp2 = yp2
-            self.Start_Index = tf.argmax(self.logits_y1, axis=-1)
-            self.End_Index = tf.argmax(self.logits_y2, axis=-1)
+            self.Start_Index = tf.argmax(self.yp, axis=-1)
+            self.End_Index = tf.argmax(self.yp2, axis=-1)
 
     def _build_loss(self):
         """
@@ -1054,14 +1052,17 @@ class Model(object):
         ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits_y1, labels=self.y))
         # tf.add_to_collection('losses', ce_loss)
-        ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-            logits=self.logits_y2, labels=self.y2))
+        if self.config['model']['y2_sel']=='linear_y2':
+            self.ce_loss2 = -tf.reduce_mean(tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1))
+        else:
+            self.ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                logits=self.logits_y2, labels=self.y2))
         # tf.add_to_collection("losses", ce_loss2)
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
-        self.loss = tf.add_n([ce_loss, ce_loss2])
+        self.loss = tf.add_n([ce_loss, self.ce_loss2])
         tf.summary.scalar('ce_loss', ce_loss)
-        tf.summary.scalar('ce_loss2', ce_loss2)
+        tf.summary.scalar('ce_loss2', self.ce_loss2)
         tf.summary.scalar('loss', self.loss)
         # tf.add_to_collection('ema/scalar', self.loss)
 
