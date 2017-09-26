@@ -151,9 +151,7 @@ class Model(object):
         # self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
 
         # Define a session for the model
-        config_gpu = tf.ConfigProto(log_device_placement=True)
-        config_gpu.gpu_options.visible_device_list=self.config['train']['device']
-        self.sess = tf.Session(tf.Session(config=config_gpu))
+        self.sess = tf.Session()
         # Add ops to save and restore all the variables.
         self.saver = tf.train.Saver(max_to_keep=100)  # not to delete previous checkpoints
         # Initialize all variables
