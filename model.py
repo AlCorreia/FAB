@@ -261,7 +261,7 @@ class Model(object):
         # If the word2vec vector is scaled by a matrix
         # Scaling word2vec matrices before adding encoder
         with tf.variable_scope('Scaling', reuse=second) as scope:
-            if self.config['model_options']['gain_scaling']:
+            if self.config['model_options']['word2vec_scaling']=='scalar':
                 weigths = tf.get_variable(
                             'gain',
                             initializer=1.0)
@@ -272,7 +272,18 @@ class Model(object):
                     X = tf.multiply(weigths, X) + bias
                 else:
                     X = tf.multiply(weigths, X)
-            elif self.config['model_options']['word2vec_scaling']:
+            elif self.config['model_options']['word2vec_scaling']=='vector':
+                weigths = tf.get_variable(
+                            'vector', shape=[self.WEAs],
+                            initializer=tf.ones_initializer())
+                if self.config['model_options']['use_bias']:
+                    bias = tf.get_variable('bias',
+                                           shape=[self.WEAs],
+                                           initializer=tf.zeros_initializer())
+                    X = tf.multiply(weigths, X) + bias
+                else:
+                    X = tf.multiply(weigths, X)
+            elif self.config['model_options']['word2vec_scaling']=='matrix':
                 with tf.variable_scope('conv2d', reuse=second):
                     # If the scaling matrix was previously trained
                     # In order to be orthonormal
@@ -294,6 +305,7 @@ class Model(object):
                                                 use_bias=self.config['model_options']['use_bias'],
                                                 reuse=True,
                                                 name="conv2d"))  # XW+B
+            else: print("\n WORD2VEC SCALING NOT SELECTED\n")
         return X
 
     def _encoder(self, X, Q):
