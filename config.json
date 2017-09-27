@@ -73,7 +73,8 @@
 		"dropout_attention_pre_softmax":1.0,
 		"dropout_attention_post_softmax":1.0,
 		"label_smoothing": 0.90,
-                "moving_encoder_regularization":true
+    "moving_encoder_regularization":true,
+		"xavier_initialization":true
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",

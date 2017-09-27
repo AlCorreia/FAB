@@ -99,6 +99,16 @@ class Model(object):
 
         # Loss outputs
         self.loss = None
+        if self.config['train']['xavier_initialization']:
+            self.initializer = tf.contrib.layers.xavier_initializer(
+                                                            uniform=False,
+                                                            seed=None,
+                                                            dtype=tf.float32)
+        else:
+            self.initializer = tf.contrib.layers.xavier_initializer(
+                                                            uniform=True,
+                                                            seed=None,
+                                                            dtype=tf.float32)
 
         # Values for computing EM and F1 for dev
         self.EM_dev = []
@@ -274,7 +284,7 @@ class Model(object):
             elif self.config['model_options']['word2vec_scaling']=='vector':
                 weigths = tf.get_variable(
                             'vector', shape=[self.WEAs],
-                            initializer=tf.ones_initializer())
+                            initializer=self.initializer)
                 if self.config['model_options']['use_bias']:
                     bias = tf.get_variable('bias',
                                            shape=[self.WEAs],
@@ -342,7 +352,7 @@ class Model(object):
             if self.config['train']['moving_encoder_regularization']:
                 #Generates a random phase for sin and cosin
                 random_steps = freq_PG * tf.random_uniform(
-                                                           shape = [1], 
+                                                           shape = [1],
                                                            minval=-self.config['model']['encoder_high_freq']*2*np.pi,
                                                            maxval=+self.config['model']['encoder_high_freq']*2*np.pi)
                 #If it is not training, this random phase is not generated to make it deterministic
@@ -401,6 +411,7 @@ class Model(object):
                                                   filters=self.WEPs*3,
                                                   kernel_size=1,
                                                   strides=1,
+                                                  kernel_initializer=self.initializer,
                                                   name='QKV_Comp'))
                 Q, K, V = tf.split(
                     QKV,
@@ -414,6 +425,7 @@ class Model(object):
                                                  filters=self.WEPs*2,
                                                  kernel_size=1,
                                                  strides=1,
+                                                 kernel_initializer=self.initializer,
                                                  name='KV_Comp'))
                 K, V = tf.split(KV,
                                 num_or_size_splits=[self.WEPs, self.WEPs],
@@ -424,6 +436,7 @@ class Model(object):
                                                 filters=self.WEPs,
                                                 kernel_size=1,
                                                 strides=1,
+                                                kernel_initializer=self.initializer,
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, self.WEAs])
@@ -532,9 +545,10 @@ class Model(object):
                                          strides=1,
                                          use_bias=True,
                                          activation=tf.nn.relu,
+                                         kernel_initializer=self.initializer,
                                          name='affine_op_1')
-            if self.config['train']['dropout_Relu']<1.0:  # This is done to save memory if dropout is not used
-                affine_op = tf.nn.dropout(affine_op,keep_prob=self.keep_prob_Relu)
+            if self.config['train']['dropout_Relu'] < 1.0:  # This is done to save memory if dropout is not used
+                affine_op = tf.nn.dropout(affine_op, keep_prob=self.keep_prob_Relu)
             X = tf.squeeze(X)
             X.set_shape([self.Bs, length_X, self.WEAs])
             # Second affine oepration.
@@ -544,6 +558,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  use_bias=True,
+                                                 kernel_initializer=self.initializer,
                                                  name='affine_op_2'))
             # Apply Dropout
             if self.config['train']['dropout_FF']<1.0: #This is done to save memory if dropout is not used
