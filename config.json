@@ -50,7 +50,7 @@
 		"FeedForward_Hidden_Size": 264,
 		"process_emb_size": 100,
                 "time_encoding": true,
-		"n_pre_layer": 4,
+		"n_pre_layer": 2,
 		"n_post_layer":1,
         	"y1_sel":"linear",
         	"y2_sel":"linear_y2"
@@ -73,6 +73,7 @@
 		"dropout_attention_pre_softmax":1.0,
 		"dropout_attention_post_softmax":1.0,
 		"label_smoothing": 0.90,
+                "moving_encoder_regularization":true
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",
@@ -82,7 +83,7 @@
 		"norm_layer": false,
         	"symmetric": false,
         	"switching_model":true,
-        	"word2vec_scaling": "scalar",
+        	"word2vec_scaling": "matrix",
 		"use_bias": true,
           "encoder_normalization": false
 				}

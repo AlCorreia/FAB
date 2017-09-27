@@ -74,7 +74,6 @@ class Model(object):
         # self.cq = tf.placeholder('int32', [self.Bs, None, W], name='cq')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
-        self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder(tf.float32,
                                           [None, self.WEs],
                                           name='new_emb_mat')
@@ -340,7 +339,16 @@ class Model(object):
             freq_PG_scalar = tf.summary.scalar('wave_length', tf.reduce_mean(freq_PG))
 
             # Compute the encoder values
-            encoder_angles = tf.matmul(pos, freq_PG)
+            if self.config['train']['moving_encoder_regularization']:
+                #Generates a random phase for sin and cosin
+                random_steps = freq_PG * tf.random_uniform(
+                                                           shape = [1], 
+                                                           minval=-self.config['model']['encoder_high_freq']*2*np.pi,
+                                                           maxval=+self.config['model']['encoder_high_freq']*2*np.pi)
+                #If it is not training, this random phase is not generated to make it deterministic
+                encoder_angles = tf.matmul(pos, freq_PG) + random_steps*tf.to_float(self.is_training)
+            else:
+                encoder_angles = tf.matmul(pos, freq_PG)
 
             # Compute the encoder values
             encoder_sin = tf.sin(tf.matmul(pos, freq_PG))
