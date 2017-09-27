@@ -64,12 +64,15 @@
 		"steps_to_email":21000,
 		"type": "Adadelta",
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
-		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0},
+		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0, "rho":0.95},
 		"dropout_encoder": 0.90,
                 "dropout_sublayer": 0.90,
                 "dropout_attention": 1.0,
 		"dropout_Relu": 1.0,
+		"dropout_FF": 1.0,
 		"dropout_concat": 1.0,
+		"dropout_attention_pre_softmax":1.0,
+		"dropout_attention_post_softmax":1.0,
 		"label_smoothing": 0.90
 	},
 	"weights_init":{
@@ -80,8 +83,9 @@
 		"norm_layer": false,
         	"symmetric": false,
         	"switching_model":true,
-        	"word2vec_matrix_scaling": true,
-        	"word2vec_vector_scaling": false,
-                "encoder_normalization": false
+        	"word2vec_scaling": false,
+        	"gain_scaling": true,
+					"use_bias": true,
+          "encoder_normalization": false
 				}
 }

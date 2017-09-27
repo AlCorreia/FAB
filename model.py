@@ -137,7 +137,7 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
-        self.train_step = optimize_loss (self.loss, global_step=self.global_step, optimizer=self.optimizer,summaries=["gradients"], learning_rate = None)
+        self.train_step = optimize_loss(self.loss, global_step=self.global_step, optimizer=self.optimizer, summaries=["gradients"], learning_rate = None)
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
@@ -205,7 +205,7 @@ class Model(object):
                             self.directory + 'ckpt/'+str(round(global_step/1000)) + 'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
-            Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index,self.train_step], feed_dict=feed_dict)
+            Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index, self.train_step], feed_dict=feed_dict)
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
         #To plot averaged EM and F1 during training
         self.EM_train.append(EM)
@@ -256,30 +256,44 @@ class Model(object):
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
 
-    def _embed_scaling(self, X):
+    def _embed_scaling(self, X, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
         # If the word2vec vector is scaled by a matrix
-        if self.config['model_options']['word2vec_matrix_scaling']:
-            X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEs])
-            X = tf.squeeze(tf.layers.conv2d(X,
-                                            filters=self.WEAs,
-                                            kernel_size=1,
-                                            strides=1,
-                                            use_bias=True,
-                                            reuse=True,
-                                            name="conv2d"))  # XW+B
-        # If the word2vec vector is scaled by a vector
-        elif self.config['model_options']['word2vec_vector_scaling']:
-            weights = tf.get_variable('weights',
-                                      shape=[self.WEAs],
-                                      initializer=tf.ones_initializer())
-            bias = tf.get_variable('bias',
-                                   shape=[self.WEAs],
-                                   initializer=tf.zeros_initializer())
-            # slice the first WEAs columns
-            X = tf.slice(X, [0, 0, 0], [self.Bs, tf.shape(X)[1], self.WEAs])
-            X = tf.add(tf.multiply(X, weights), bias)  # xi = xi*w+b
+        # Scaling word2vec matrices before adding encoder
+        with tf.variable_scope('Scaling', reuse=second) as scope:
+            if self.config['model_options']['gain_scaling']:
+                weigths = tf.get_variable(
+                            'gain',
+                            initializer=1.0)
+                if self.config['model_options']['use_bias']:
+                    bias = tf.get_variable('bias',
+                                           shape=[self.WEAs],
+                                           initializer=tf.zeros_initializer())
+                    X = tf.multiply(weigths, X) + bias
+                else:
+                    X = tf.multiply(weigths, X)
+            elif self.config['model_options']['word2vec_scaling']:
+                with tf.variable_scope('conv2d', reuse=second):
+                    # If the scaling matrix was previously trained
+                    # In order to be orthonormal
+                    weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
+                    U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
+                    weigths = tf.get_variable(
+                                'kernel',
+                                initializer=U)
+                    if self.config['model_options']['use_bias']:
+                        bias = tf.get_variable('bias',
+                                               shape=[self.WEAs],
+                                               initializer=tf.zeros_initializer())
+                X = tf.expand_dims(X, 2)
+                X.set_shape([self.Bs, length_X, 1, self.WEs])
+                X = tf.squeeze(tf.layers.conv2d(X,
+                                                filters=self.WEAs,
+                                                kernel_size=1,
+                                                strides=1,
+                                                use_bias=self.config['model_options']['use_bias'],
+                                                reuse=True,
+                                                name="conv2d"))  # XW+B
         return X
 
     def _encoder(self, X, Q):
@@ -350,7 +364,7 @@ class Model(object):
         q_encoded = tf.add(Q, encoder_q)
         if self.config['train']['dropout_encoder']<1.0: #This is done to save memory if dropout is not used
             x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
-            q_encoded = tf.nn.dropout(q_encoded,keep_prob=self.keep_prob_encoder)
+            q_encoded = tf.nn.dropout(q_encoded, keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
     def _attention_layer(self, X1, mask, X2=None, scope=None):
@@ -414,7 +428,7 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
-            if self.config['train']['dropout_attention_pre_softmax']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_attention_pre_softmax'] < 1.0: #This is done to save memory if dropout is not used
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
@@ -428,7 +442,7 @@ class Model(object):
                     dim=-1)
             # Final mask is applied
             if self.config['train']['dropout_attention_post_softmax']<1.0:
-                #To normalize softmax sum to 1.
+                # To normalize softmax sum to 1.
                 softmax = 1/self.keep_prob_attention_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), self.keep_prob_attention_post_softmax)
             else:
                 softmax = tf.multiply(mask, softmax)
@@ -499,7 +513,7 @@ class Model(object):
                                          use_bias=True,
                                          activation=tf.nn.relu,
                                          name='affine_op_1')
-            if self.config['train']['dropout_Relu']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_Relu']<1.0:  # This is done to save memory if dropout is not used
                 affine_op = tf.nn.dropout(affine_op,keep_prob=self.keep_prob_Relu)
             X = tf.squeeze(X)
             X.set_shape([self.Bs, length_X, self.WEAs])
@@ -829,34 +843,8 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
-        # Scaling word2vec matrices before adding encoder
-        with tf.variable_scope('Scaling') as scope:
-            if self.config['model_options']['word2vec_vector_scaling']:
-                weigths = tf.get_variable('weights', shape=self.WEAs)
-                bias = tf.get_variable('bias',
-                                       shape=self.WEAs,
-                                       initializer=tf.zeros_initializer())
-            elif self.config['model_options']['word2vec_matrix_scaling']:
-                with tf.variable_scope('conv2d'):
-                    # If the scaling matrix was previously trained
-                    if self.config['weights_init']['pre_trained_scaling_matrix']:
-                        weigths = tf.get_variable(
-                                    'kernel',
-                                    initializer=np.load('./kernel.npy'),
-                                    trainable=False)
-                    else:  # If the scaling matrix was not previously trained
-                        # In order to be orthonormal
-                        weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
-                        U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
-                        weigths = tf.get_variable(
-                                    'kernel',
-                                    initializer=U)
-                    bias = tf.get_variable('bias',
-                                           shape=[self.WEAs],
-                                           initializer=tf.zeros_initializer())
-            scope.reuse_variables()
             x_scaled = self._embed_scaling(Ax)
-            q_scaled = self._embed_scaling(Aq)
+            q_scaled = self._embed_scaling(Aq, second=True)
 
         # Encoding Variables
         if config['model']['time_encoding']:
@@ -1093,7 +1081,7 @@ class Model(object):
         label_smoothing = self.config['train']['label_smoothing']
 
 
-        def wordsearch(word,known_or_unknown):
+        def wordsearch(word, known_or_unknown):
             if word in dataset['shared'][known_or_unknown]:
                 return dataset['shared'][known_or_unknown][word]
             elif word.capitalize() in dataset['shared'][known_or_unknown]:
@@ -1106,14 +1094,14 @@ class Model(object):
                 return 0
 
         def word2id(word):  # to convert a word to its respective id
-            ID = wordsearch(word,'known_word2idx')
-            if ID !=0: #if it was found
+            ID = wordsearch(word, 'known_word2idx')
+            if ID != 0:  # if it was found
                 return ID + self.WVs
-            ID = wordsearch(word,'unk_word2idx')
-            if ID !=0: #if it was found
+            ID = wordsearch(word, 'unk_word2idx')
+            if ID != 0:  # if it was found
                 return ID
-            #if it was not found in any
-            return 1 #unknown word
+            # if it was not found in any
+            return 1  # unknown word
 
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
