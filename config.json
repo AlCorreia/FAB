@@ -3,7 +3,7 @@
 		"Comment_":"#Specifications of the glove model to use",
         	"dir":"./data/glove",
         	"corpus":"6B",
-        	"vec_size":"300",
+        	"vec_size":"100",
         	"db":"write-math"
     },
 	"directories":{
@@ -28,7 +28,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID99 with linear_y2 selector,freq 2,5, 4:1, 6B 300:100, XAVIER",
+                "name": "ID100 with linear_y2 selector,freq 2,5, 2:1, 6B 100:100, XAVIER, Adagrad",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -62,9 +62,10 @@
 		"steps":600000,
 		"steps_to_save": 3000,
 		"steps_to_email":21000,
-		"type": "Adadelta",
+		"type": "Adagrad",
 		"Adam":     {"learning_rate":2e-4, "decay_rate":0,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":7200.0, "constant_LR":true},
 		"Adadelta": {"learning_rate":0.65, "decay_steps": 200, "decay_rate": 1.0, "rho":0.95},
+		"Adagrad": {"learning_rate":1.0, "initial_accumulator_value":0.1},
 		"dropout_encoder": 0.90,
                 "dropout_attention": 0.9,
 		"dropout_FF": 0.9,
@@ -85,7 +86,7 @@
         	"symmetric": false,
         	"switching_model":true,
         	"word2vec_scaling": "matrix",
-		"word2vec_orthonormal_scaling":false,
+		"word2vec_orthonormal_scaling":true,
 		"use_bias": true,
           "encoder_normalization": false
 				}

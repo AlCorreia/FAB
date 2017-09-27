@@ -140,6 +140,10 @@ class Model(object):
                                     tf.reduce_min([tf.pow(tf.cast(self.global_step, tf.float32), -self.config['train']['Adam']['decay_rate']), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(config['train']['Adam']['WarmupSteps'], tf.float32),-config['train']['Adam']['decay_rate']-1.0))]),
                                     tf.pow(tf.cast(self.WEAs, tf.float32), -0.5))
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate if config['train']['Adam']['constant_LR'] else self.config['train']['Adam']['learning_rate'], beta1 = config['train']['Adam']['beta1'], beta2=config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
+        elif config['train']['type'] == "Adagrad":
+            self.optimizer = tf.train.AdagradOptimizer(
+                learning_rate=config['train']['Adagrad']['learning_rate'],
+                initial_accumulator_value=config['train']['Adagrad']['initial_accumulator_value'])
 
         # not sure if tf.contrib.layers.optimize_loss better than self.optimizer
         # Using contrib.layers to automatically log the gradients
