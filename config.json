@@ -3,7 +3,7 @@
 		"Comment_":"#Specifications of the glove model to use",
         	"dir":"./data/glove",
         	"corpus":"6B",
-        	"vec_size":"100",
+        	"vec_size":"300",
         	"db":"write-math"
     },
 	"directories":{
@@ -15,7 +15,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": false,
+		"run": true,
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
@@ -28,7 +28,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID94 with linear_y2 selector,freq 2,5, 4:1",
+                "name": "ID99 with linear_y2 selector,freq 2,5, 4:1, 6B 300:100, XAVIER",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -58,7 +58,7 @@
 	"train":{
 		"check_available_memory":  false,
 		"train": true,
-		"batch_size":5,
+		"batch_size":75,
 		"steps":600000,
 		"steps_to_save": 3000,
 		"steps_to_email":21000,
@@ -85,6 +85,7 @@
         	"symmetric": false,
         	"switching_model":true,
         	"word2vec_scaling": "matrix",
+		"word2vec_orthonormal_scaling":false,
 		"use_bias": true,
           "encoder_normalization": false
 				}

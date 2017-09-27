@@ -296,11 +296,17 @@ class Model(object):
                 with tf.variable_scope('conv2d', reuse=second):
                     # If the scaling matrix was previously trained
                     # In order to be orthonormal
-                    weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
-                    U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
-                    weigths = tf.get_variable(
-                                'kernel',
-                                initializer=U)
+                    if self.config['model_options']['word2vec_orthonormal_scaling']:
+                        weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
+                        U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
+                        weigths = tf.get_variable(
+                                    'kernel',
+                                    initializer=U)
+                    else:
+                        weigths = tf.get_variable(
+                                    'kernel',
+                                    shape=[1, 1, self.WEs, self.WEAs],
+                                    initializer=self.initializer)
                     if self.config['model_options']['use_bias']:
                         bias = tf.get_variable('bias',
                                                shape=[self.WEAs],
