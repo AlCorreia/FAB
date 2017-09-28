@@ -280,18 +280,18 @@ class Model(object):
                             initializer=1.0)
                 if self.config['model_options']['use_bias']:
                     bias = tf.get_variable('bias',
-                                           shape=[self.WEAs],
+                                           shape=[self.WEs],
                                            initializer=tf.zeros_initializer())
                     X = tf.multiply(weigths, X) + bias
                 else:
                     X = tf.multiply(weigths, X)
             elif self.config['model_options']['word2vec_scaling']=='vector':
                 weigths = tf.get_variable(
-                            'vector', shape=[self.WEAs],
+                            'vector', shape=[self.WEs],
                             initializer=self.initializer)
                 if self.config['model_options']['use_bias']:
                     bias = tf.get_variable('bias',
-                                           shape=[self.WEAs],
+                                           shape=[self.WEs],
                                            initializer=tf.zeros_initializer())
                     X = tf.multiply(weigths, X) + bias
                 else:
@@ -301,24 +301,24 @@ class Model(object):
                     # If the scaling matrix was previously trained
                     # In order to be orthonormal
                     if self.config['model_options']['word2vec_orthonormal_scaling']:
-                        weights_init = np.random.random((1, 1, self.WEs, self.WEAs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
-                        U, _, _ = np.linalg.svd(weights_init, full_matrices=False)
+                        weights_init = np.random.random((1, 1, self.WEs, self.WEs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
+                        _, _, U = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
                                     initializer=U)
                     else:
                         weigths = tf.get_variable(
                                     'kernel',
-                                    shape=[1, 1, self.WEs, self.WEAs],
+                                    shape=[1, 1, self.WEs, self.WEs],
                                     initializer=self.initializer)
                     if self.config['model_options']['use_bias']:
                         bias = tf.get_variable('bias',
-                                               shape=[self.WEAs],
+                                               shape=[self.WEs],
                                                initializer=tf.zeros_initializer())
                 X = tf.expand_dims(X, 2)
                 X.set_shape([self.Bs, length_X, 1, self.WEs])
                 X = tf.squeeze(tf.layers.conv2d(X,
-                                                filters=self.WEAs,
+                                                filters=self.WEs,
                                                 kernel_size=1,
                                                 strides=1,
                                                 use_bias=self.config['model_options']['use_bias'],
@@ -348,7 +348,7 @@ class Model(object):
             # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
             # Create a vector with all the exponents
-            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEAs/2), self.WEAs/2-1))
+            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEs/2), self.WEs/2-1))
             # Power the base frequency by exponents
             freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
             if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
@@ -378,7 +378,7 @@ class Model(object):
             encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
 
             # Computes the encoder values for x and q
-            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEAs])
+            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEs])
 
             if self.config['model']['encoder_no_cross']:
                 # If no cross attention between encoders is desired
@@ -394,10 +394,10 @@ class Model(object):
                 encoder_q =  tf.slice(
                                         tf.concat([encoder_sin_q,encoder_cos_q], axis=1),
                                         [0, 0],
-                                        [size_q, self.WEAs])
+                                        [size_q, self.WEs])
             else:
                 # If encoder in x and q are the same
-                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEAs])
+                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEs])
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -407,6 +407,27 @@ class Model(object):
             q_encoded = tf.nn.dropout(q_encoded, keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
+
+    def _reduce_dimension(self, X, second=False):
+        length_X = X.get_shape()[1]  # number of words in the passage
+        with tf.variable_scope('reduce_dimension', reuse=second) as scope:
+            with tf.variable_scope('conv2d', reuse=second):
+                # If the scaling matrix was previously trained
+                # In order to be orthonormal
+                weigths = tf.get_variable(
+                            'kernel',
+                            shape=[1, 1, self.WEs, self.WEAs],
+                            initializer=self.initializer)
+            X = tf.expand_dims(X, 2)
+            X.set_shape([self.Bs, length_X, 1, self.WEs])
+            X = tf.squeeze(tf.layers.conv2d(X,
+                                            filters=self.WEAs,
+                                            kernel_size=1,
+                                            strides=1,
+                                            use_bias=False,
+                                            reuse=True,
+                                            name="conv2d"))  # XW
+        return X
     def _attention_layer(self, X1, mask, X2=None, scope=None):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         with tf.variable_scope(scope):
@@ -895,6 +916,10 @@ class Model(object):
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
                 x_scaled, q_scaled = self._encoder(x_scaled, q_scaled)
+
+        if self.WEAs!=self.WEs:
+            x_scaled = self._reduce_dimension(x_scaled)
+            q_scaled = self._reduce_dimension(q_scaled, second=True)
 
         # Defining functions according to config.json
         # They are used later in the final model
