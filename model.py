@@ -753,14 +753,13 @@ class Model(object):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, self.WEAs, 1])
+            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
             logits = tf.layers.conv2d(X,
                                       filters=1,
-                                      kernel_size=(5, self.WEAs),
-                                      strides=(1, self.WEAs),
+                                      kernel_size=(5, 1),
+                                      strides=1,
                                       padding='same',
                                       use_bias=True,
-                                      activation=tf.nn.relu,
                                       kernel_initializer=self.initializer,
                                       name='conv_sel')
             logits = tf.reshape(logits, [self.Bs, -1])
@@ -773,7 +772,7 @@ class Model(object):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, self.WEAs, 1])
+            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
 
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
@@ -782,11 +781,10 @@ class Model(object):
 
             logits = tf.layers.conv2d(X,
                                       filters=1,
-                                      kernel_size=(5, self.WEAs),
-                                      strides=(1, self.WEAs),
+                                      kernel_size=(5, 1),
+                                      strides=1,
                                       padding='same',
                                       use_bias=True,
-                                      activation=tf.nn.relu,
                                       kernel_initializer=self.initializer,
                                       name='conv_sel_2')
             logits = tf.reshape(logits, [self.Bs, -1])
