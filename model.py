@@ -740,7 +740,7 @@ class Model(object):
                                 dtype=tf.float32)
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
-            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32)+mask['x']-1.0),tf.float32)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32)+mask['x']-1.0), tf.float32)
             self.y2_corrected = tf.multiply(self.y2, mask_new)
             logits = tf.add(tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER),
                         tf.reshape(
@@ -767,6 +767,32 @@ class Model(object):
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+        return output, logits
+
+    def _conv_sel_2(self, X, y1_sel, mask, scope):
+        """ Select one vector among n vectors by max(w*X) """
+        length_X = X.get_shape()[1]
+        with tf.variable_scope(scope):
+            X = tf.reshape(X, [self.Bs, -1, self.WEAs, 1])
+
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            self.y2_corrected = tf.multiply(self.y2, mask_new)
+
+            logits = tf.layers.conv2d(X,
+                                      filters=1,
+                                      kernel_size=(5, self.WEAs),
+                                      strides=(1, self.WEAs),
+                                      padding='same',
+                                      use_bias=True,
+                                      activation=tf.nn.relu,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel_2')
+            logits = tf.reshape(logits, [self.Bs, -1])
+            output = tf.nn.softmax(
+                        tf.add(logits,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
     def _split_layer_sel(self, Q, X, mask, scope):
@@ -901,6 +927,8 @@ class Model(object):
             output, logits = self._linear_sel_y2(X, y1_sel, mask, scope)
         elif method == "conv":
             output, logits = self._conv_sel(X, mask, scope)
+        elif method == "conv2":
+            output, logits = self._conv_sel_2(X, y1_sel, mask, scope)
         return output, logits
 
     def _build_forward_Attention(self):
