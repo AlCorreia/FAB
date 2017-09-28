@@ -1176,7 +1176,7 @@ class Model(object):
         ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits_y1, labels=self.y))
         # tf.add_to_collection('losses', ce_loss)
-        if self.config['model']['y2_sel']=='linear_y2':
+        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2'):
             self.ce_loss2 = -tf.reduce_mean(tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1))
         else:
             self.ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
