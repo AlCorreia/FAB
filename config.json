@@ -15,7 +15,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": true,
+		"run": false,
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
@@ -28,7 +28,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID100 with linear_y2 selector,freq 2,5, 2:1, 6B 100:100, XAVIER, Adagrad",
+                "name": "ID104 with linear_y2 selector,freq 2,5, 2:1, 6B 100:100, XAVIER, Adadelta, Conv",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -52,7 +52,7 @@
                 "time_encoding": true,
 		"n_pre_layer": 2,
 		"n_post_layer":1,
-        	"y1_sel":"linear",
+        	"y1_sel":"conv",
         	"y2_sel":"linear_y2"
 	},
 	"train":{
@@ -74,8 +74,8 @@
 		"dropout_concat": 1.0,
 		"dropout_attention_pre_softmax":1.0,
 		"dropout_attention_post_softmax":1.0,
-		"label_smoothing": 0.95,
-    "moving_encoder_regularization":true,
+		"label_smoothing": 0.90,
+    "moving_encoder_regularization":false,
 		"xavier_initialization":true
 	},
 	"weights_init":{
