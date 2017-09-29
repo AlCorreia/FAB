@@ -793,6 +793,35 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
+    def _single_conv(self, X, mask, scope):
+        """ Select one vector among n vectors by max(w*X) """
+        length_X = X.get_shape()[1]
+        with tf.variable_scope(scope):
+            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            logits = tf.layers.conv2d(X,
+                                      filters=2,
+                                      kernel_size=(5, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel_2')
+
+            logits = tf.reshape(logits, [self.Bs, -1, 2])
+            logits1, logits2 = tf.split(logits, 2, 2)
+            logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
+            output1 = tf.nn.softmax(
+                        tf.add(logits1,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(output1, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            self.y2_corrected = tf.multiply(self.y2, mask_new)
+            output2 = tf.nn.softmax(
+                        tf.add(logits2,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+        return output1, output2, logits1, logits2
+
     def _split_layer_sel(self, Q, X, mask, scope):
         """ Compute a self_attention, cross_attention
             and estimate the answer by linear_selec. """
@@ -994,20 +1023,26 @@ class Model(object):
             q.append(q_i)
             x.append(x_i)
 
-        # Computing outputs
-        self.yp, self.logits_y1 = self._y_selection(
-                                              Q=q[-1-num_layers_post],
-                                              X=x[-1-num_layers_post],
-                                              mask=mask,
-                                              scope='y1_sel',
-                                              method=config['model']['y1_sel'])
-        self.yp2, self.logits_y2 = self._y_selection(
-                                               Q=q[-1],
-                                               X=x[-1],
-                                               mask=mask,
-                                               scope='y2_sel',
-                                               method=config['model']['y2_sel'],
-                                               y1_sel=self.yp)
+        if config['model']['y1_sel'] == "single_conv":
+            self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._single_conv(
+                X=x[-1],
+                mask=mask,
+                scope='y1_y2_sel')
+        else:
+            # Computing outputs
+            self.yp, self.logits_y1 = self._y_selection(
+                                                  Q=q[-1-num_layers_post],
+                                                  X=x[-1-num_layers_post],
+                                                  mask=mask,
+                                                  scope='y1_sel',
+                                                  method=config['model']['y1_sel'])
+            self.yp2, self.logits_y2 = self._y_selection(
+                                                   Q=q[-1],
+                                                   X=x[-1],
+                                                   mask=mask,
+                                                   scope='y2_sel',
+                                                   method=config['model']['y2_sel'],
+                                                   y1_sel=self.yp)
         self.Start_Index = tf.argmax(self.yp, axis=-1)
         self.End_Index = tf.argmax(self.yp2, axis=-1)
 
