@@ -820,7 +820,7 @@ class Model(object):
             output2 = tf.nn.softmax(
                         tf.add(logits2,
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
-        return output1, output2, logits1, logits2
+        return output1, logits1, output2, logits2
 
     def _split_layer_sel(self, Q, X, mask, scope):
         """ Compute a self_attention, cross_attention
