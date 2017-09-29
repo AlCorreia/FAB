@@ -756,7 +756,7 @@ class Model(object):
             X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
             logits = tf.layers.conv2d(X,
                                       filters=1,
-                                      kernel_size=(5, 1),
+                                      kernel_size=(7, 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
@@ -781,7 +781,7 @@ class Model(object):
 
             logits = tf.layers.conv2d(X,
                                       filters=1,
-                                      kernel_size=(5, 1),
+                                      kernel_size=(7, 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
