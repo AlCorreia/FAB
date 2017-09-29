@@ -822,6 +822,28 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output1, logits1, output2, logits2
 
+    def _direct(self, X, mask, scope):
+        with tf.variable_scope(scope):
+            logits = tf.reshape(X, [self.Bs, -1, self.WEAs])
+            logits = tf.reduce_sum(logits, axis=-1)
+            output = tf.nn.softmax(
+                        tf.add(logits,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+        return output, logits
+
+    def _direct_2(self, X, y1_sel, mask, scope):
+        with tf.variable_scope(scope):
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            self.y2_corrected = tf.multiply(self.y2, mask_new)
+            logits = tf.reshape(X, [self.Bs, -1, self.WEAs])
+            logits = tf.reduce_sum(logits, axis=-1)
+            output = tf.nn.softmax(
+                        tf.add(logits,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+        return output, logits
+
     def _split_layer_sel(self, Q, X, mask, scope):
         """ Compute a self_attention, cross_attention
             and estimate the answer by linear_selec. """
@@ -956,6 +978,10 @@ class Model(object):
             output, logits = self._conv_sel(X, mask, scope)
         elif method == "conv2":
             output, logits = self._conv_sel_2(X, y1_sel, mask, scope)
+        elif method == "direct":
+            output, logits = self._direct(X, mask, scope)
+        elif method == "direct2":
+            output, logits = self._direct_2(X, y1_sel, mask, scope)
         return output, logits
 
     def _build_forward_Attention(self):
@@ -1209,7 +1235,7 @@ class Model(object):
         ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits_y1, labels=self.y))
         # tf.add_to_collection('losses', ce_loss)
-        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv'):
+        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y2_sel']=='direct2'):
             self.ce_loss2 = -tf.reduce_mean(tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1))
         else:
             self.ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
