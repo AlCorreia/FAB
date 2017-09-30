@@ -41,6 +41,7 @@ class Model(object):
         self.keep_prob_concat = tf.placeholder_with_default(1.0, shape=(), name='dropout_concat')
         self.keep_prob_Relu = tf.placeholder_with_default(1.0, shape=(), name='dropout_Relu')
         self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
+        self.keep_prob_selector = tf.placeholder_with_default(1.0, shape=(), name='dropout_selector')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -207,6 +208,7 @@ class Model(object):
         feed_dict['dropout_concat:0'] = self.config['train']['dropout_concat']
         feed_dict['dropout_Relu:0'] = self.config['train']['dropout_Relu']
         feed_dict['dropout_FF:0'] = self.config['train']['dropout_FF']
+        feed_dict['dropout_selector:0'] = self.config['train']['dropout_selector']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -836,6 +838,7 @@ class Model(object):
                                       activation=tf.nn.relu,
                                       kernel_initializer=self.initializer,
                                       name='conv_sel')
+            logits = tf.nn.dropout(logits, keep_prob=self.keep_prob_selector)
             logits = tf.layers.conv2d(logits,
                                       filters=2,
                                       kernel_size=(9, 1),
@@ -851,7 +854,7 @@ class Model(object):
             output1 = tf.nn.softmax(
                         tf.add(logits1,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-            y1_selected = tf.cast(tf.expand_dims(tf.argmax(output1, axis=1),1), tf.int32)
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(output1, axis=1), 1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
             mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
             self.y2_corrected = tf.multiply(self.y2, mask_new)
