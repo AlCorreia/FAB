@@ -42,6 +42,7 @@ class Model(object):
         self.keep_prob_Relu = tf.placeholder_with_default(1.0, shape=(), name='dropout_Relu')
         self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
         self.keep_prob_selector = tf.placeholder_with_default(1.0, shape=(), name='dropout_selector')
+        self.keep_prob_char = tf.placeholder_with_default(1.0, shape=(), name='dropout_char')
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -82,13 +83,13 @@ class Model(object):
         self.max_size_q = tf.shape(self.q)
 
 
-        if config['model']['char_embedding']: #If there is char embedidng
-            self.COs = config['model']['char_out_size'] #Char output size
-            self.CEs = config['model']['char_embedding_size'] #Char embedding size
+        if config['model']['char_embedding']:  # If there is char embedidng
+            self.COs = config['model']['char_out_size']  # Char output size
+            self.CEs = config['model']['char_embedding_size']  # Char embedding size
             self.CVs = config['model']['char_vocabulary_size']
-            self.WEs = self.WEs+self.COs
-            self.xc = tf.placeholder('int32', [self.Bs, None, None], name='xc') #Char level of x
-            self.qc = tf.placeholder('int32', [self.Bs, None, None], name='qc') #Char-level of q
+            self.WEs = self.WEs + self.COs
+            self.xc = tf.placeholder('int32', [self.Bs, None, None], name='xc')  # Char level of x
+            self.qc = tf.placeholder('int32', [self.Bs, None, None], name='qc')  # Char-level of q
             self.xc_size = tf.shape(self.xc)
             self.qc_size = tf.shape(self.qc)
             self.xCs = self.xc_size[2]
@@ -142,7 +143,7 @@ class Model(object):
                 staircase=True)
             self.optimizer = tf.train.AdadeltaOptimizer(
                 learning_rate=self.learning_rate,
-                rho = config['train']['Adadelta']['rho'])
+                rho=config['train']['Adadelta']['rho'])
 
         elif config['train']['type'] == "Adam":
 		    # Decay_Rate is positive and therefore the - sign in this equation.
@@ -218,6 +219,7 @@ class Model(object):
         feed_dict['dropout_Relu:0'] = self.config['train']['dropout_Relu']
         feed_dict['dropout_FF:0'] = self.config['train']['dropout_FF']
         feed_dict['dropout_selector:0'] = self.config['train']['dropout_selector']
+        feed_dict['dropout_char:0'] = self.config['train']['dropout_char']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -288,22 +290,18 @@ class Model(object):
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
 
-
-
-
     def _char2word_embedding(self, Ac, mask):
         Ac_size = tf.shape(Ac)
-        Ac = tf.reshape(Ac,[Ac_size[0]*Ac_size[1],-1,1,self.CEs])
+        Ac = tf.reshape(Ac, [Ac_size[0]*Ac_size[1], -1, 1, self.CEs])
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
-                                       filters=self.COs,
-                                       kernel_size = [self.config['model']['char_convolution_size'],1], 
-                                       strides=[1,1],
-                                        padding="same")
+                                              filters=self.COs,
+                                              kernel_size=[self.config['model']['char_convolution_size'], 1],
+                                              strides=[1, 1],
+                                              padding="same")
         A_word_convolution_masked = A_word_convolution+(1.0-mask)*VERY_LOW_NUMBER
-        char_embedded_word = tf.reduce_max(A_word_convolution, axis=1) #Reduce all info to a vector
+        char_embedded_word = tf.reduce_max(A_word_convolution, axis=1)  # Reduce all info to a vector
         char_embedded_word = tf.reshape(char_embedded_word, [Ac_size[0], Ac_size[1], self.COs])
-        return char_embedded_word
-        
+        return tf.nn.dropout(char_embedded_word, keep_prob=self.dropout_char)
 
     def _embed_scaling(self, X, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
@@ -984,8 +982,6 @@ class Model(object):
                 dim=2)
         return softmax_X, logits
 
-
-
     def _AoA_sel(self, Q, X, mask, scope):
         """ Attention over attention for computing y1"""
         with tf.variable_scope(scope):
@@ -1093,14 +1089,13 @@ class Model(object):
                     "char_emb_mat",
                     dtype=tf.float32,
                     initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
-                Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc) 
-                Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)  
-                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_qc,tf.float32)) #Compute a vector for each word in x
-                Acq_word = self._char2word_embedding(Ac=Acq, mask=tf.cast(self.mask_qc,tf.float32))#Compute a vector for each word in q
-                #Concatenate word2vec and char2word2vec together
-                Ax = tf.concat([Ax,Acx_word], axis=2)
-                Aq = tf.concat([Aq,Acq_word], axis=2)
-
+                Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc)
+                Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)
+                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_qc, tf.float32))  # Compute a vector for each word in x
+                Acq_word = self._char2word_embedding(Ac=Acq, mask=tf.cast(self.mask_qc, tf.float32))  # Compute a vector for each word in q
+                #  Concatenate word2vec and char2word2vec together
+                Ax = tf.concat([Ax, Acx_word], axis=2)
+                Aq = tf.concat([Aq, Acq_word], axis=2)
 
             x_scaled = self._embed_scaling(Ax)
             q_scaled = self._embed_scaling(Aq, second=True)
@@ -1110,7 +1105,7 @@ class Model(object):
             with tf.variable_scope("Encoding"):
                 x_scaled, q_scaled = self._encoder(x_scaled, q_scaled)
 
-        if self.WEAs!=self.WEs:
+        if self.WEAs != self.WEs:
             x_scaled = self._reduce_dimension(x_scaled)
             q_scaled = self._reduce_dimension(q_scaled, second=True)
 
@@ -1356,7 +1351,6 @@ class Model(object):
         y2 = []
         label_smoothing = self.config['train']['label_smoothing']
 
-
         def wordsearch(word, known_or_unknown):
             if word in dataset['shared'][known_or_unknown]:
                 return dataset['shared'][known_or_unknown][word]
@@ -1383,7 +1377,7 @@ class Model(object):
             if char in dataset['shared']['char2idx']:
                 return dataset['shared']['char2idx'][char]
             else:
-                 return 1  # unknown char
+                return 1  # unknown char
 
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
@@ -1396,28 +1390,27 @@ class Model(object):
             return np.int_(new_seq), new_seq_y, max_size
 
         def padding_chars(seq, max_size_sentence, label_smoothing=1.0, max_size=None):  # for padding a batch
-  
+
             seq_len = [len(seq[i][j])  for i in range(len(seq)) for j in range(len(seq[i]))]
             if max_size is None:
                 max_size = max(seq_len)
-            #First add padding in each character and later in each sentence.
-            new_seq = [np.concatenate([[np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0) for j in range(len(seq[i]))],np.zeros([max_size_sentence-len(seq[i]),max_size])], axis=0) for i in range(len(seq))]
+            # First add padding in each character and later in each sentence.
+            new_seq = [np.concatenate([[np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0) for j in range(len(seq[i]))], np.zeros([max_size_sentence-len(seq[i]),max_size])], axis=0) for i in range(len(seq))]
             return np.int_(new_seq)
 
-        # TODO: Add characters
-        # convert every word to its respective id
+        # Convert every word to its respective id
         for i in batch_idxs:
             qi = list(map(
                 word2id,
                 dataset['data']['q'][i]))
-            qic = [] #compute char2id for question
+            qic = []  # compute char2id for question
             for j in dataset['data']['q'][i]:
                 qic.append(list(map(char2id,j)))
             rxi = dataset['data']['*x'][i]
             yi = dataset['data']['y'][i]
             xi = list(map(word2id, dataset['shared']['x'][rxi[0]][rxi[1]]))
-            
-            xic = [] #Compute char2id for passage
+
+            xic = []  # Compute char2id for passage
             for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
                 xic.append(list(map(char2id,j)))
             q.append(qi)
@@ -1457,7 +1450,7 @@ class Model(object):
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
 
-        if self.config['model']['char_embedding']: #If there is char embeedding
+        if self.config['model']['char_embedding']: # If there is char embeedding
             feed_dict[self.xc] = xc
             feed_dict[self.qc] = qc
 
