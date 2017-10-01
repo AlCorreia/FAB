@@ -301,7 +301,7 @@ class Model(object):
         A_word_convolution_masked = A_word_convolution+(1.0-mask)*VERY_LOW_NUMBER
         char_embedded_word = tf.reduce_max(A_word_convolution, axis=1)  # Reduce all info to a vector
         char_embedded_word = tf.reshape(char_embedded_word, [Ac_size[0], Ac_size[1], self.COs])
-        return tf.nn.dropout(char_embedded_word, keep_prob=self.dropout_char)
+        return tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
 
     def _embed_scaling(self, X, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
