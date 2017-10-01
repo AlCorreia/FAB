@@ -78,6 +78,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     x, cx = [], []
     answerss = []
     p = []
+    word_len = []
     paragraph_len, question_len = [], []
     word_counter, char_counter = Counter(), Counter()
     start_ai = int(round(len(source_data['data']) * start_ratio))
@@ -97,6 +98,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             xi = process_tokens(xi)  # process tokens
             # given xi, add chars
             cxi = [list(xij) for xij in xi]
+            max_xc = max([len(list(xij)) for xij in xi])
             xp.append(xi)
             cxp.append(cxi)
             pp.append(context)
@@ -113,6 +115,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 # get words
                 qi = word_tokenize(qa['question'])
                 cqi = [list(qij) for qij in qi]
+                max_qc = max([len(list(qij)) for qij in qi])
                 yi = []
                 cyi = []
                 answers = []
@@ -146,6 +149,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 ids.append(qa['id'])
                 idxs.append(len(idxs))
                 paragraph_len.append(len(xi))
+                word_len.append(max([max_qc, max_xc]))
                 question_len.append(len(qi))
                 answerss.append(answers)
 
@@ -156,7 +160,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
-            'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len}
+            'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len}
     shared = {'x': x, 'cx': cx, 'p': p,
               'word_counter': word_counter, 'char_counter': char_counter,
               'word2vec': word2vec_dict}
@@ -225,6 +229,12 @@ def read_data(config, data_type, ref, data_filter = None):
                         else np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
                         for idx in range(word_vocab_size)]) #create random vectors for new words
 
+    if config['model']['char_embedding']: #If there is char embedding
+        char_vocab_size = len(shared['char2idx'])
+        shared['emb_mat_chars'] = np.array([np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])), 
+                                                                      np.eye(int(config['model']['char_embedding_size'])))
+                                       for idx in range(char_vocab_size)]) #create random vectors for new words
+
     data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
     return data_set
 
@@ -233,12 +243,13 @@ def data_filter_func(config, data, shared):
     valid_idxs = []
     x_len = data['paragraph_len']
     q_len = data['question_len']
+    word_len = data['word_len']
     # Delete paragraphs and questions longer than threshold.
     for i in range(len(data['q'])):
         #q = data['q'][i]
         #rx = data['*x'][i]
         #x = shared['x'][rx[0]][rx[1]]
-        if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']):
+        if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']) and (word_len[i]<=config['pre']['max_word_size']):
             valid_idxs.append(i)
 
     # Group paragraphs and questions with similar sizes
@@ -272,6 +283,9 @@ def data_filter_func(config, data, shared):
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
     config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype=np.float32)
+    if config['model']['char_embedding']:
+        config['model']['char_vocabulary_size'] = len(data_set['shared']['emb_mat_chars'])
+        config['model']['emb_mat_chars'] = np.array(data_set['shared']['emb_mat_chars'], dtype=np.float32)
     return config
 
 

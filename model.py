@@ -58,21 +58,16 @@ class Model(object):
         # self.Qs = config['model']['max_ques_size']
         # self.Wm = config['model']['max_word_size']
         self.WVs = config['model']['vocabulary_size']
-        self.WEs = int(config['glove']['vec_size'])  # Assumed to be equal to the GloVe vector size
+        self.WEs = int(config['glove']['vec_size'])  # Assumed to be equal to the GloVe vector size. IT IS UPDATED, if char_embedding is used!!!!
         self.WEAs = config['model']['attention_emb_size']  # Word-embedding attention size
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
-        # self.CVs = config['model']['char_vocabulary_size']
-        # self.CEs = config['model']['char_emb_size']
-        # self.Co = config['model']['char_out_size']
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
         self.x = tf.placeholder('int32', [self.Bs, None], name='x')  # number of batches and number of words
-        # self.cx = tf.placeholder('int32', [self.Bs, None, None, W], name='cx')
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
-        # self.cq = tf.placeholder('int32', [self.Bs, None, W], name='cq')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
         self.new_emb_mat = tf.placeholder(tf.float32,
@@ -86,6 +81,20 @@ class Model(object):
         self.max_size_x = tf.shape(self.x)
         self.max_size_q = tf.shape(self.q)
 
+
+        if config['model']['char_embedding']: #If there is char embedidng
+            self.COs = config['model']['char_out_size'] #Char output size
+            self.CEs = config['model']['char_embedding_size'] #Char embedding size
+            self.CVs = config['model']['char_vocabulary_size']
+            self.WEs = self.WEs+self.COs
+            self.xc = tf.placeholder('int32', [self.Bs, None, None], name='xc') #Char level of x
+            self.qc = tf.placeholder('int32', [self.Bs, None, None], name='qc') #Char-level of q
+            self.xc_size = tf.shape(self.xc)
+            self.qc_size = tf.shape(self.qc)
+            self.xCs = self.xc_size[2]
+            self.mask_xc = tf.sign(self.xc)
+            self.qCs = self.qc_size[2]
+            self.mask_qc = tf.sign(self.qc)
         # Redefine some parameters based on the actual tensor dimensions
         self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
@@ -278,6 +287,23 @@ class Model(object):
     def _load(self):  # To load a checkpoint
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
+
+
+
+
+    def _char2word_embedding(self, Ac, mask):
+        Ac_size = tf.shape(Ac)
+        Ac = tf.reshape(Ac,[Ac_size[0]*Ac_size[1],-1,1,self.CEs])
+        A_word_convolution = tf.layers.conv2d(inputs=Ac,
+                                       filters=self.COs,
+                                       kernel_size = [self.config['model']['char_convolution_size'],1], 
+                                       strides=[1,1],
+                                        padding="same")
+        A_word_convolution_masked = A_word_convolution+(1.0-mask)*VERY_LOW_NUMBER
+        char_embedded_word = tf.reduce_max(A_word_convolution, axis=1) #Reduce all info to a vector
+        char_embedded_word = tf.reshape(char_embedded_word, [Ac_size[0], Ac_size[1], self.COs])
+        return char_embedded_word
+        
 
     def _embed_scaling(self, X, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
@@ -1061,6 +1087,21 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
+        if self.config['model']['char_embedding']:
+            with tf.variable_scope("char_emb"):
+                char_emb_mat = tf.get_variable(
+                    "char_emb_mat",
+                    dtype=tf.float32,
+                    initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
+                Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc) 
+                Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)  
+                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_qc,tf.float32)) #Compute a vector for each word in x
+                Acq_word = self._char2word_embedding(Ac=Acq, mask=tf.cast(self.mask_qc,tf.float32))#Compute a vector for each word in q
+                #Concatenate word2vec and char2word2vec together
+                Ax = tf.concat([Ax,Acx_word], axis=2)
+                Aq = tf.concat([Aq,Acq_word], axis=2)
+
+
             x_scaled = self._embed_scaling(Ax)
             q_scaled = self._embed_scaling(Aq, second=True)
 
@@ -1309,6 +1350,8 @@ class Model(object):
         feed_dict = {}
         x = []
         q = []
+        qc = []
+        xc = []
         y1 = []
         y2 = []
         label_smoothing = self.config['train']['label_smoothing']
@@ -1336,6 +1379,12 @@ class Model(object):
             # if it was not found in any
             return 1  # unknown word
 
+        def char2id(char):  # to convert a char to its respective id
+            if char in dataset['shared']['char2idx']:
+                return dataset['shared']['char2idx'][char]
+            else:
+                 return 1  # unknown char
+
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
         def padding(seq, label_smoothing=1.0, max_size=None):  # for padding a batch
@@ -1344,7 +1393,16 @@ class Model(object):
                 max_size = max(seq_len)
             new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
             new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
-            return np.int_(new_seq), new_seq_y
+            return np.int_(new_seq), new_seq_y, max_size
+
+        def padding_chars(seq, max_size_sentence, label_smoothing=1.0, max_size=None):  # for padding a batch
+  
+            seq_len = [len(seq[i][j])  for i in range(len(seq)) for j in range(len(seq[i]))]
+            if max_size is None:
+                max_size = max(seq_len)
+            #First add padding in each character and later in each sentence.
+            new_seq = [np.concatenate([[np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0) for j in range(len(seq[i]))],np.zeros([max_size_sentence-len(seq[i]),max_size])], axis=0) for i in range(len(seq))]
+            return np.int_(new_seq)
 
         # TODO: Add characters
         # convert every word to its respective id
@@ -1352,26 +1410,38 @@ class Model(object):
             qi = list(map(
                 word2id,
                 dataset['data']['q'][i]))
+            qic = [] #compute char2id for question
+            for j in dataset['data']['q'][i]:
+                qic.append(list(map(char2id,j)))
             rxi = dataset['data']['*x'][i]
             yi = dataset['data']['y'][i]
             xi = list(map(word2id, dataset['shared']['x'][rxi[0]][rxi[1]]))
+            
+            xic = [] #Compute char2id for passage
+            for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
+                xic.append(list(map(char2id,j)))
             q.append(qi)
+            qc.append(qic)
+            xc.append(xic)
             x.append(xi)
             # Get all the first indices in the sequence
             y1.append([y[0] for y in yi])
             # Get all the second indices... and correct for -1
             y2.append([y[1]-1 for y in yi])
-
         self.answer = [y1, y2]
         # Padding
         if self.config['train']['check_available_memory']:
-            x, new_seq_y = padding(x,
+            x, new_seq_y, max_size_x = padding(x,
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
-            q, _ = padding(q, max_size=self.config['pre']['max_question_size'])
+            q, _, max_size_q = padding(q, max_size=self.config['pre']['max_question_size'])
+            xc = padding_chars(xc, max_size_x)
+            qc = padding_chars(qc, max_size_q)
         else:
-            x, new_seq_y = padding(x, label_smoothing=label_smoothing)
-            q, _ = padding(q)
+            x, new_seq_y, max_size_x = padding(x, label_smoothing=label_smoothing)
+            q, _, max_size_q = padding(q)
+            xc = padding_chars(xc, max_size_x)
+            qc = padding_chars(qc, max_size_q)
         y1_new = new_seq_y
         y2_new = np.copy(new_seq_y)
         for i in range(self.Bs):
@@ -1380,14 +1450,16 @@ class Model(object):
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
-        # feed_dict[self.cx] = cx
         feed_dict[self.q] = q
-        # feed_dict[self.cq] = cq
         feed_dict[self.y] = y1_new
         feed_dict[self.y2] = y2_new
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
+
+        if self.config['model']['char_embedding']: #If there is char embeedding
+            feed_dict[self.xc] = xc
+            feed_dict[self.qc] = qc
 
         return feed_dict
 
