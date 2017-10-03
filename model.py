@@ -1097,8 +1097,8 @@ class Model(object):
                 Ax = tf.concat([Ax, Acx_word], axis=2)
                 Aq = tf.concat([Aq, Acq_word], axis=2)
 
-            x_scaled = self._embed_scaling(Ax)
-            q_scaled = self._embed_scaling(Aq, second=True)
+        x_scaled = self._embed_scaling(Ax)
+        q_scaled = self._embed_scaling(Aq, second=True)
 
         # Encoding Variables
         if config['model']['time_encoding']:
@@ -1391,7 +1391,7 @@ class Model(object):
 
         def padding_chars(seq, max_size_sentence, label_smoothing=1.0, max_size=None):  # for padding a batch
 
-            seq_len = [len(seq[i][j])  for i in range(len(seq)) for j in range(len(seq[i]))]
+            seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
             if max_size is None:
                 max_size = max(seq_len)
             # First add padding in each character and later in each sentence.
