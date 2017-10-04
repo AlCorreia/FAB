@@ -292,16 +292,21 @@ class Model(object):
 
     def _char2word_embedding(self, Ac, mask):
         Ac_size = tf.shape(Ac)
+        mask = tf.expand_dims(mask,3)
+        Ac = tf.multiply(Ac,mask) #To zero all embeddings
         Ac = tf.reshape(Ac, [Ac_size[0]*Ac_size[1], -1, 1, self.CEs])
+        mask_reshaped = tf.reshape(mask, [Ac_size[0]*Ac_size[1], -1, 1, 1])
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
                                               filters=self.COs,
                                               kernel_size=[self.config['model']['char_convolution_size'], 1],
                                               strides=[1, 1],
                                               padding="same")
-        A_word_convolution_masked = A_word_convolution+(1.0-mask)*VERY_LOW_NUMBER
-        char_embedded_word = tf.reduce_max(A_word_convolution, axis=1)  # Reduce all info to a vector
+        A_word_convolution_masked = A_word_convolution+(1.0-mask_reshaped)*(-1e5)#When it is too big, it returns not a number
+        char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=1)  # Reduce all info to a vector
         char_embedded_word = tf.reshape(char_embedded_word, [Ac_size[0], Ac_size[1], self.COs])
-        return tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
+        if self.config['train']['dropout_char']<1.0:
+            char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
+        return char_embedded_word
 
     def _embed_scaling(self, X, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
@@ -1091,7 +1096,7 @@ class Model(object):
                     initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
                 Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc)
                 Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)
-                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_qc, tf.float32))  # Compute a vector for each word in x
+                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_xc, tf.float32))  # Compute a vector for each word in x
                 Acq_word = self._char2word_embedding(Ac=Acq, mask=tf.cast(self.mask_qc, tf.float32))  # Compute a vector for each word in q
                 #  Concatenate word2vec and char2word2vec together
                 Ax = tf.concat([Ax, Acx_word], axis=2)

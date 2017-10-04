@@ -79,6 +79,7 @@
 		"dropout_attention_pre_softmax":1.0,
 		"dropout_attention_post_softmax":1.0,
 		"dropout_selector":1.0,
+		"dropout_char":1.0,
 		"label_smoothing": 0.90,
     "moving_encoder_regularization":false,
 		"xavier_initialization":true
