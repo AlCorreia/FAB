@@ -67,7 +67,8 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     """
     # Define the word tokenizer. Only NLTK for now
     def word_tokenize(tokens):
-        return [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
+        tokenizer_result = [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
+        return tokenizer_result
 
 
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))

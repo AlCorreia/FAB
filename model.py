@@ -290,20 +290,20 @@ class Model(object):
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
 
-    def _char2word_embedding(self, Ac, mask):
+    def _char2word_embedding(self, Ac, mask, word_mask):
         Ac_size = tf.shape(Ac)
-        mask = tf.expand_dims(mask,3)
+        word_mask_2 = tf.sign(tf.reduce_sum(mask,2))
+        mask = tf.expand_dims(tf.cast(mask,tf.float32),3)
         Ac = tf.multiply(Ac,mask) #To zero all embeddings
-        Ac = tf.reshape(Ac, [Ac_size[0]*Ac_size[1], -1, 1, self.CEs])
-        mask_reshaped = tf.reshape(mask, [Ac_size[0]*Ac_size[1], -1, 1, 1])
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
                                               filters=self.COs,
-                                              kernel_size=[self.config['model']['char_convolution_size'], 1],
+                                              kernel_size=[1,self.config['model']['char_convolution_size']],
                                               strides=[1, 1],
-                                              padding="same")
-        A_word_convolution_masked = A_word_convolution+(1.0-mask_reshaped)*(-1e5)#When it is too big, it returns not a number
-        char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=1)  # Reduce all info to a vector
-        char_embedded_word = tf.reshape(char_embedded_word, [Ac_size[0], Ac_size[1], self.COs])
+                                              padding="same",
+                                              activation=None)
+        A_word_convolution_masked = A_word_convolution+tf.cast(1-mask,tf.float32)*(VERY_LOW_NUMBER)#To ignore padding vectors in reduce_max
+        char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=2)  # Reduce all info to a vector
+        char_embedded_word = tf.multiply(char_embedded_word,tf.cast(tf.expand_dims(word_mask,2),tf.float32))
         if self.config['train']['dropout_char']<1.0:
             char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
         return char_embedded_word
@@ -1096,12 +1096,14 @@ class Model(object):
                     initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
                 Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc)
                 Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)
-                Acx_word = self._char2word_embedding(Ac=Acx, mask=tf.cast(self.mask_xc, tf.float32))  # Compute a vector for each word in x
-                Acq_word = self._char2word_embedding(Ac=Acq, mask=tf.cast(self.mask_qc, tf.float32))  # Compute a vector for each word in q
+                Acx_word = self._char2word_embedding(Ac=Acx, mask=self.mask_xc, word_mask=self.x_mask)  # Compute a vector for each word in x
+                Acq_word = self._char2word_embedding(Ac=Acq, mask=self.mask_qc, word_mask=self.q_mask)  # Compute a vector for each word in q
                 #  Concatenate word2vec and char2word2vec together
                 Ax = tf.concat([Ax, Acx_word], axis=2)
                 Aq = tf.concat([Aq, Acq_word], axis=2)
 
+        Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask,2),tf.float32))
+        Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask,2),tf.float32))
         x_scaled = self._embed_scaling(Ax)
         q_scaled = self._embed_scaling(Aq, second=True)
 
@@ -1394,14 +1396,16 @@ class Model(object):
             new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
             return np.int_(new_seq), new_seq_y, max_size
 
-        def padding_chars(seq, max_size_sentence, label_smoothing=1.0, max_size=None):  # for padding a batch
-
+        def padding_chars(seq, max_size_sentence, max_size=None):  # for padding a batch
             seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
             if max_size is None:
                 max_size = max(seq_len)
             # First add padding in each character and later in each sentence.
-            new_seq = [np.concatenate([[np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0) for j in range(len(seq[i]))], np.zeros([max_size_sentence-len(seq[i]),max_size])], axis=0) for i in range(len(seq))]
-            return np.int_(new_seq)
+            for i in range(len(seq)):
+                for j in range(len(seq[i])):
+                    seq[i][j] = np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0)
+                seq[i] = np.concatenate([np.array(seq[i]), np.zeros([max_size_sentence-len(seq[i]), max_size])], axis=0)
+            return np.int_(seq)
 
         # Convert every word to its respective id
         for i in batch_idxs:
