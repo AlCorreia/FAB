@@ -43,6 +43,7 @@ class Model(object):
         self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
         self.keep_prob_selector = tf.placeholder_with_default(1.0, shape=(), name='dropout_selector')
         self.keep_prob_char = tf.placeholder_with_default(1.0, shape=(), name='dropout_char')
+
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
 
@@ -88,14 +89,14 @@ class Model(object):
             self.CEs = config['model']['char_embedding_size']  # Char embedding size
             self.CVs = config['model']['char_vocabulary_size']
             self.WEs = self.WEs + self.COs
-            self.xc = tf.placeholder('int32', [self.Bs, None, None], name='xc')  # Char level of x
-            self.qc = tf.placeholder('int32', [self.Bs, None, None], name='qc')  # Char-level of q
+            self.xc = tf.placeholder('int32', [self.Bs, None], name='xc')  # Char level of x
+            self.qc = tf.placeholder('int32', [self.Bs, None], name='qc')  # Char-level of q
+            self.short_words_char = tf.placeholder('int32', [None, None], name='short_words_char')
+            self.long_words_char = tf.placeholder('int32', [None, None], name='long_words_char')
             self.xc_size = tf.shape(self.xc)
             self.qc_size = tf.shape(self.qc)
-            self.xCs = self.xc_size[2]
-            self.mask_xc = tf.sign(self.xc)
-            self.qCs = self.qc_size[2]
-            self.mask_qc = tf.sign(self.qc)
+            self.xc_mask = tf.sign(self.xc)
+            self.qc_mask = tf.sign(self.qc)
         # Redefine some parameters based on the actual tensor dimensions
         self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
@@ -290,20 +291,19 @@ class Model(object):
         # TODO: Add structure to save/load different checkpoints.
         self.saver.restore(self.sess, self.directory + 'model.ckpt')
 
-    def _char2word_embedding(self, Ac, mask, word_mask):
+    def _char2word_embedding(self, Ac, mask):
         Ac_size = tf.shape(Ac)
-        word_mask_2 = tf.sign(tf.reduce_sum(mask,2))
-        mask = tf.expand_dims(tf.cast(mask,tf.float32),3)
+        mask = tf.expand_dims(tf.cast(mask,tf.float32),2)
         Ac = tf.multiply(Ac,mask) #To zero all embeddings
+        Ac=tf.expand_dims(Ac,1)
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
                                               filters=self.COs,
                                               kernel_size=[1,self.config['model']['char_convolution_size']],
                                               strides=[1, 1],
                                               padding="same",
                                               activation=None)
-        A_word_convolution_masked = A_word_convolution+tf.cast(1-mask,tf.float32)*(VERY_LOW_NUMBER)#To ignore padding vectors in reduce_max
-        char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=2)  # Reduce all info to a vector
-        char_embedded_word = tf.multiply(char_embedded_word,tf.cast(tf.expand_dims(word_mask,2),tf.float32))
+        A_word_convolution_masked = tf.squeeze(A_word_convolution,1)+tf.cast(1-mask,tf.float32)*(VERY_LOW_NUMBER)#To ignore padding vectors in reduce_max
+        char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=1)  # Reduce all info to a vector
         if self.config['train']['dropout_char']<1.0:
             char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
         return char_embedded_word
@@ -1094,10 +1094,20 @@ class Model(object):
                     "char_emb_mat",
                     dtype=tf.float32,
                     initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
-                Acx = tf.nn.embedding_lookup(char_emb_mat, self.xc)
-                Acq = tf.nn.embedding_lookup(char_emb_mat, self.qc)
-                Acx_word = self._char2word_embedding(Ac=Acx, mask=self.mask_xc, word_mask=self.x_mask)  # Compute a vector for each word in x
-                Acq_word = self._char2word_embedding(Ac=Acq, mask=self.mask_qc, word_mask=self.q_mask)  # Compute a vector for each word in q
+                #Embedding of characters 
+                Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
+                Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
+                #Computation of equivalent word embedding
+                Ac_short = self._char2word_embedding(Ac=Ac_short, mask=tf.sign(self.short_words_char))  # Compute a vector for each word in x
+                Ac_long = self._char2word_embedding(Ac=Ac_long, mask=tf.sign(self.long_words_char))  # Compute a vector for each word in q
+                Ac = tf.concat([Ac_short,Ac_long],axis=0)
+
+                #Embedding of equivalent word embedding
+                Acx_word = tf.nn.embedding_lookup(Ac, self.xc)
+                Acq_word = tf.nn.embedding_lookup(Ac, self.qc)
+                #Masking
+                Acx_word = tf.multiply(Acx_word, tf.cast(tf.expand_dims(self.xc_mask,2),tf.float32))
+                Acq_word = tf.multiply(Acq_word, tf.cast(tf.expand_dims(self.qc_mask,2),tf.float32))
                 #  Concatenate word2vec and char2word2vec together
                 Ax = tf.concat([Ax, Acx_word], axis=2)
                 Aq = tf.concat([Aq, Acq_word], axis=2)
@@ -1358,6 +1368,21 @@ class Model(object):
         y2 = []
         label_smoothing = self.config['train']['label_smoothing']
 
+
+        def wordchar2id(text,dictionary,word_size):
+            text_out =[]
+            dict_len = len(dictionary)
+            for word in text:
+                if word in dictionary:
+                    text_out.append(dictionary[word][0])
+                else:
+                    dict_len = dict_len+1 #It starts at one
+                    dictionary.update({word:[dict_len,len(word)]})
+                    word_size[len(word)]=word_size[len(word)]+1
+                    text_out.append(dict_len)
+            return text_out, dictionary, word_size
+
+
         def wordsearch(word, known_or_unknown):
             if word in dataset['shared'][known_or_unknown]:
                 return dataset['shared'][known_or_unknown][word]
@@ -1408,6 +1433,8 @@ class Model(object):
             return np.int_(seq)
 
         # Convert every word to its respective id
+        words_dict = {}
+        word_size_counter = [0]*(self.config['pre']['max_word_size']+1)
         for i in batch_idxs:
             qi = list(map(
                 word2id,
@@ -1418,12 +1445,15 @@ class Model(object):
 
 
             if self.config['model']['char_embedding']:
-                qic = []  # compute char2id for question
-                for j in dataset['data']['q'][i]:
-                    qic.append(list(map(char2id,j)))
-                xic = []  # Compute char2id for passage
-                for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
-                    xic.append(list(map(char2id,j)))
+                qic, words_dict, word_size_counter = wordchar2id(dataset['data']['q'][i], words_dict, word_size_counter)
+                xic, words_dict, word_size_counter = wordchar2id(dataset['shared']['x'][rxi[0]][rxi[1]], words_dict, word_size_counter)
+                #######################################
+                #qic = []  # compute char2id for question
+                #for j in dataset['data']['q'][i]:
+                #    qic.append(list(map(char2id,j)))
+                #xic = []  # Compute char2id for passage
+                #for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
+                #    xic.append(list(map(char2id,j)))
                 qc.append(qic)
                 xc.append(xic)
             q.append(qi)
@@ -1444,11 +1474,41 @@ class Model(object):
             q, _, max_size_q = padding(q)
 
         if self.config['model']['char_embedding']: #Padding chars
-            xc = padding_chars(xc, max_size_x)
-            qc = padding_chars(qc, max_size_q)
+            ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
+            longest_word_size = ordered_words[-1][1][1]
+            number_of_words = len(ordered_words)
+            mapping=[None]*(1+len(ordered_words))
+            computational_cost = 1e10
+            computational_cost_new = 1e9
+            long_word_start = False
+            long_words_list = []
+            short_words_list = []
+            index = -1
+            size_short = 0
+            while (computational_cost>computational_cost_new): #Find optimal threshold for short and long words
+                index = index + 1
+                size_short = size_short+word_size_counter[index]
+                computational_cost = computational_cost_new
+                computational_cost_new = (index+1)*(size_short)+longest_word_size*(number_of_words-size_short)
+            short_words_list.append([0]) #index 0 is null word
+            for i in range(number_of_words):
+                mapping[ordered_words[i][1][0]]=i+1
+                if len(ordered_words[i][0])>index:
+                    long_words_list.append(list(map(char2id,ordered_words[i][0])))
+                else:
+                    short_words_list.append(list(map(char2id,ordered_words[i][0])))
+            for i in range(len(batch_idxs)):
+                xc[i] = list(map(lambda y: mapping[y],xc[i]))
+                qc[i] = list(map(lambda y: mapping[y],qc[i]))
+            xc, _, _ = padding(xc)
+            qc, _, _ = padding(qc)
+            short_words_list, _, _ = padding(short_words_list)
+            long_words_list, _, _ = padding(long_words_list)
             feed_dict[self.xc] = xc
             feed_dict[self.qc] = qc
-
+            feed_dict[self.short_words_char] = short_words_list
+            feed_dict[self.long_words_char] = long_words_list
+            #pdb.set_trace()
         y1_new = new_seq_y
         y2_new = np.copy(new_seq_y)
         for i in range(self.Bs):
