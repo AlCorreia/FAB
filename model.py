@@ -1412,19 +1412,21 @@ class Model(object):
             qi = list(map(
                 word2id,
                 dataset['data']['q'][i]))
-            qic = []  # compute char2id for question
-            for j in dataset['data']['q'][i]:
-                qic.append(list(map(char2id,j)))
             rxi = dataset['data']['*x'][i]
             yi = dataset['data']['y'][i]
             xi = list(map(word2id, dataset['shared']['x'][rxi[0]][rxi[1]]))
 
-            xic = []  # Compute char2id for passage
-            for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
-                xic.append(list(map(char2id,j)))
+
+            if self.config['model']['char_embedding']:
+                qic = []  # compute char2id for question
+                for j in dataset['data']['q'][i]:
+                    qic.append(list(map(char2id,j)))
+                xic = []  # Compute char2id for passage
+                for j in dataset['shared']['x'][rxi[0]][rxi[1]]:
+                    xic.append(list(map(char2id,j)))
+                qc.append(qic)
+                xc.append(xic)
             q.append(qi)
-            qc.append(qic)
-            xc.append(xic)
             x.append(xi)
             # Get all the first indices in the sequence
             y1.append([y[0] for y in yi])
@@ -1437,13 +1439,16 @@ class Model(object):
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
             q, _, max_size_q = padding(q, max_size=self.config['pre']['max_question_size'])
-            xc = padding_chars(xc, max_size_x)
-            qc = padding_chars(qc, max_size_q)
         else:
             x, new_seq_y, max_size_x = padding(x, label_smoothing=label_smoothing)
             q, _, max_size_q = padding(q)
+
+        if self.config['model']['char_embedding']: #Padding chars
             xc = padding_chars(xc, max_size_x)
             qc = padding_chars(qc, max_size_q)
+            feed_dict[self.xc] = xc
+            feed_dict[self.qc] = qc
+
         y1_new = new_seq_y
         y2_new = np.copy(new_seq_y)
         for i in range(self.Bs):
@@ -1458,10 +1463,6 @@ class Model(object):
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
-
-        if self.config['model']['char_embedding']: # If there is char embeedding
-            feed_dict[self.xc] = xc
-            feed_dict[self.qc] = qc
 
         return feed_dict
 
