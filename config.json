@@ -2,8 +2,8 @@
 	"glove":{
 		"Comment_":"#Specifications of the glove model to use",
         	"dir":"./data/glove",
-        	"corpus":"6B",
-        	"vec_size":"100",
+        	"corpus":"840B",
+        	"vec_size":"300",
         	"db":"write-math"
     },
 	"directories":{
@@ -19,7 +19,7 @@
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
-		"word_count_th": 10,
+		"word_count_th": 1000,
 		"char_count_th": 50,
 		"max_question_size": 60,
 		"max_paragraph_size": 400,
@@ -29,7 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID123 SYMMETRIC, chars double_conv,freq 1-10k, 3:0, 6B 100+50:100, XAVIER, Adadelta",
+                "name": "ID137 SYMMETRIC word, double_conv,freq 0.5-20k, 3:0, 840B 300:300:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -39,23 +39,24 @@
 		"n_hidden": 100,
 		"input_keep_prob":0.9,
 		"share_lstm_weights":true,
-		"encoder_low_freq":1.0,
-		"encoder_high_freq": 10000.0,
+		"encoder_low_freq":0.5,
+		"encoder_high_freq": 20000.0,
 		"encoder_learn_freq": false,
                 "encoder_step_skip_size": -75.0,
                 "encoder_no_cross": true,
 		"full_trainable_encoder": false,
 		"multi_head_size": 4,
+		"word_emb_size_after_scaling":300,
 		"attention_emb_size": 100,
-		"FeedForward_Hidden_Size": 264,
+		"FeedForward_Hidden_Size": 250,
 		"process_emb_size": 100,
                 "time_encoding": true,
-		"n_pre_layer": 4,
+		"n_pre_layer": 3,
 		"n_post_layer":0,
-                "char_embedding":true,
-		"char_embedding_size":100,
+                "char_embedding":false,
+		"char_embedding_size":50,
 		"char_convolution_size": 5,
-		"char_out_size":50,
+		"char_out_size":25,
         	"y1_sel":"double_conv",
         	"y2_sel":"direct2"
 	},
@@ -72,7 +73,7 @@
 		"Adagrad": {"learning_rate":0.05, "initial_accumulator_value":0.1},
 		"RMS": {"learning_rate":0.05, "decay":0.9, "momentum":0.1},
 		"dropout_encoder": 0.90,
-    "dropout_attention": 0.9,
+		"dropout_attention": 0.9,
 		"dropout_FF": 0.9,
 		"dropout_Relu": 1.0,
 		"dropout_concat": 1.0,
@@ -81,7 +82,7 @@
 		"dropout_selector":1.0,
 		"dropout_char":1.0,
 		"label_smoothing": 0.90,
-    "moving_encoder_regularization":false,
+		"moving_encoder_regularization":false,
 		"xavier_initialization":true
 	},
 	"weights_init":{
@@ -90,11 +91,11 @@
 	},
 	"model_options":{
 		"norm_layer": false,
-        	"symmetric": false,
-        	"switching_model":true,
+        	"symmetric": true,
+        	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":true,
 		"use_bias": true,
-          "encoder_normalization": false
+		"encoder_normalization": false
 				}
 }

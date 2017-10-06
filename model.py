@@ -61,6 +61,7 @@ class Model(object):
         # self.Wm = config['model']['max_word_size']
         self.WVs = config['model']['vocabulary_size']
         self.WEs = int(config['glove']['vec_size'])  # Assumed to be equal to the GloVe vector size. IT IS UPDATED, if char_embedding is used!!!!
+        self.WEOs = config['model']['word_emb_size_after_scaling']
         self.WEAs = config['model']['attention_emb_size']  # Word-embedding attention size
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
@@ -88,7 +89,6 @@ class Model(object):
             self.COs = config['model']['char_out_size']  # Char output size
             self.CEs = config['model']['char_embedding_size']  # Char embedding size
             self.CVs = config['model']['char_vocabulary_size']
-            self.WEs = self.WEs + self.COs
             self.xc = tf.placeholder('int32', [self.Bs, None], name='xc')  # Char level of x
             self.qc = tf.placeholder('int32', [self.Bs, None], name='qc')  # Char-level of q
             self.short_words_char = tf.placeholder('int32', [None, None], name='short_words_char')
@@ -97,6 +97,8 @@ class Model(object):
             self.qc_size = tf.shape(self.qc)
             self.xc_mask = tf.sign(self.xc)
             self.qc_mask = tf.sign(self.qc)
+        else:
+            self.COs = 0 #No char embedding
         # Redefine some parameters based on the actual tensor dimensions
         self.Ps = tf.shape(self.x)[1]
         self.Qs = tf.shape(self.q)[1]
@@ -344,20 +346,20 @@ class Model(object):
                         _, _, U = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
-                                    initializer=U)
+                                    initializer=U[...,0:self.WEOs])
                     else:
                         weigths = tf.get_variable(
                                     'kernel',
-                                    shape=[1, 1, self.WEs, self.WEs],
+                                    shape=[1, 1, self.WEs, self.WEOs],
                                     initializer=self.initializer)
                     if self.config['model_options']['use_bias']:
                         bias = tf.get_variable('bias',
-                                               shape=[self.WEs],
+                                               shape=[self.WEOs],
                                                initializer=tf.zeros_initializer())
                 X = tf.expand_dims(X, 2)
                 X.set_shape([self.Bs, length_X, 1, self.WEs])
                 X = tf.squeeze(tf.layers.conv2d(X,
-                                                filters=self.WEs,
+                                                filters=self.WEOs,
                                                 kernel_size=1,
                                                 strides=1,
                                                 use_bias=self.config['model_options']['use_bias'],
@@ -387,7 +389,7 @@ class Model(object):
             # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
             # Create a vector with all the exponents
-            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range(self.WEs/2), self.WEs/2-1))
+            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range((self.WEOs+self.COs)/2), (self.WEOs+self.COs)/2-1))
             # Power the base frequency by exponents
             freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
             if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
@@ -417,7 +419,7 @@ class Model(object):
             encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
 
             # Computes the encoder values for x and q
-            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEs])
+            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEOs+self.COs])
 
             if self.config['model']['encoder_no_cross']:
                 # If no cross attention between encoders is desired
@@ -433,10 +435,10 @@ class Model(object):
                 encoder_q =  tf.slice(
                                         tf.concat([encoder_sin_q,encoder_cos_q], axis=1),
                                         [0, 0],
-                                        [size_q, self.WEs])
+                                        [size_q, self.WEOs+self.COs])
             else:
                 # If encoder in x and q are the same
-                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEs])
+                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEOs+self.COs])
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -455,10 +457,10 @@ class Model(object):
                 # In order to be orthonormal
                 weigths = tf.get_variable(
                             'kernel',
-                            shape=[1, 1, self.WEs, self.WEAs],
+                            shape=[1, 1, self.WEOs+self.COs, self.WEAs],
                             initializer=self.initializer)
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEs])
+            X.set_shape([self.Bs, length_X, 1, self.WEOs+self.COs])
             X = tf.squeeze(tf.layers.conv2d(X,
                                             filters=self.WEAs,
                                             kernel_size=1,
@@ -1088,6 +1090,12 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
+
+        Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask,2),tf.float32))
+        Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask,2),tf.float32))
+        x_scaled = self._embed_scaling(Ax)
+        q_scaled = self._embed_scaling(Aq, second=True)
+
         if self.config['model']['char_embedding']:
             with tf.variable_scope("char_emb"):
                 char_emb_mat = tf.get_variable(
@@ -1109,20 +1117,16 @@ class Model(object):
                 Acx_word = tf.multiply(Acx_word, tf.cast(tf.expand_dims(self.xc_mask,2),tf.float32))
                 Acq_word = tf.multiply(Acq_word, tf.cast(tf.expand_dims(self.qc_mask,2),tf.float32))
                 #  Concatenate word2vec and char2word2vec together
-                Ax = tf.concat([Ax, Acx_word], axis=2)
-                Aq = tf.concat([Aq, Acq_word], axis=2)
+                x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
+                q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
 
-        Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask,2),tf.float32))
-        Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask,2),tf.float32))
-        x_scaled = self._embed_scaling(Ax)
-        q_scaled = self._embed_scaling(Aq, second=True)
 
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
                 x_scaled, q_scaled = self._encoder(x_scaled, q_scaled)
 
-        if self.WEAs != self.WEs:
+        if self.WEAs != (self.WEOs+self.COs):
             x_scaled = self._reduce_dimension(x_scaled)
             q_scaled = self._reduce_dimension(q_scaled, second=True)
 
