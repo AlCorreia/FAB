@@ -43,6 +43,7 @@ class Model(object):
         self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
         self.keep_prob_selector = tf.placeholder_with_default(1.0, shape=(), name='dropout_selector')
         self.keep_prob_char = tf.placeholder_with_default(1.0, shape=(), name='dropout_char')
+        self.keep_prob_word_passage = tf.placeholder_with_default(1.0, shape=(), name='dropout_word_passage')
 
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
@@ -223,6 +224,7 @@ class Model(object):
         feed_dict['dropout_FF:0'] = self.config['train']['dropout_FF']
         feed_dict['dropout_selector:0'] = self.config['train']['dropout_selector']
         feed_dict['dropout_char:0'] = self.config['train']['dropout_char']
+        feed_dict['dropout_word_passage:0'] = self.config['train']['dropout_word_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -1120,7 +1122,11 @@ class Model(object):
                 x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
                 q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
 
-
+        #Dropout to zero a word2vec of a word
+        if self.config['train']['dropout_word_passage']<1.0:
+            x_scaled = tf.multiply(x_scaled,tf.nn.dropout(tf.cast(
+                                                   tf.expand_dims(self.x_mask, 2),
+                                                   tf.float32),keep_prob=self.keep_prob_word_passage))
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
