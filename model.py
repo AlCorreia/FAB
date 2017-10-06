@@ -287,9 +287,9 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
-        Start_Index, End_Index, yp, yp2 = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp), tf.reduce_max(self.yp2)], feed_dict=feed_dict)
+        Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
         # Write the results to Tensorboard
-        return Start_Index, End_Index, yp*yp2
+        return Start_Index, End_Index, prob
 
     def _load(self):  # To load a checkpoint
         # TODO: Add structure to save/load different checkpoints.

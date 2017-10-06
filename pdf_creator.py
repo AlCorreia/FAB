@@ -86,7 +86,7 @@ def create_pdf(config, ids=None, Start_Index=None, End_Index=None, prob=None):
             story.append(Paragraph('A{}: '.format(j) + ' '.join(x[i][int(y1[i][j]): int(y2[i][j]) + 1]), styles["Justify"]))
             story.append(Spacer(1, 12))
         story.append(Paragraph('FABIR: ' + ' '.join(x[i][int(Start_Index[i]): int(End_Index[i]) + 1]), styles["Justify"]))
-        story.append(Paragraph('Certainty: ' + str(prob*100) + '%', styles["Justify"]))
+        story.append(Paragraph('Certainty: ' + str(prob[i]*100) + '%', styles["Justify"]))
         story.append(Spacer(1, 12))	
         story.append(line)
         story.append(Spacer(1, 12))
