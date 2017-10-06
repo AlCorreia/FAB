@@ -79,8 +79,8 @@ def main(config):
                 print(last_info)
             if i % config['train']['steps_to_email'] == 0 and i > 0:
                 valid_idxs = data_dev['valid_idxs']
-                Start_Index, End_Index = model.evaluate_all_dev(valid_idxs[0:config['train']['batch_size']], data_dev)
-                create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index)
+                Start_Index, End_Index, prob = model.evaluate_all_dev(valid_idxs[0:config['train']['batch_size']], data_dev)
+                create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index, prob)
                 send_mail(attach_dir=['./config.json','./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'], body=last_info)
     # To check the exact match and F1 of the model for dev
     if config['model']['evaluate_dev']:
