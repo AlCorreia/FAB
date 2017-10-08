@@ -233,7 +233,7 @@ def read_data(config, data_type, ref, data_filter = None):
     if config['model']['char_embedding']: #If there is char embedding
         char_vocab_size = len(shared['char2idx'])
         shared['emb_mat_chars'] = np.array([np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])), 
-                                                                      config['model']['std_char_init']*np.eye(int(config['model']['char_embedding_size'])))
+                                                                      config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
                                        for idx in range(char_vocab_size)]) #create random vectors for new words
 
     data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
