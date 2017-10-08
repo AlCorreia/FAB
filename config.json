@@ -2,8 +2,8 @@
 	"glove":{
 		"Comment_":"#Specifications of the glove model to use",
         	"dir":"./data/glove",
-        	"corpus":"840B",
-        	"vec_size":"300",
+        	"corpus":"6B",
+        	"vec_size":"100",
         	"db":"write-math"
     },
 	"directories":{
@@ -29,7 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID137 SYMMETRIC word, double_conv,freq 0.5-20k, 3:0, 840B 300:300:100",
+                "name": "ID152 SYMMETRIC char/word, char_dropout=0.8, double_conv,freq 1-10k, 3:0, 6B 100:100+50:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -53,10 +53,13 @@
                 "time_encoding": true,
 		"n_pre_layer": 3,
 		"n_post_layer":0,
-                "char_embedding":false,
-		"char_embedding_size":50,
+                "char_embedding":true,
+		"char_embedding_size":25,
 		"char_convolution_size": 5,
 		"char_out_size":25,
+		"variance_char_init":0.05,
+		"highway_type":"word",
+		"highway_num_layers":2,
         	"y1_sel":"double_conv",
         	"y2_sel":"direct2"
 	},
@@ -80,7 +83,7 @@
 		"dropout_attention_pre_softmax":1.0,
 		"dropout_attention_post_softmax":1.0,
 		"dropout_selector":1.0,
-		"dropout_char":1.0,
+		"dropout_char":0.8,
 		"dropout_word_passage":1.0,
 		"label_smoothing": 0.90,
 		"moving_encoder_regularization":false,

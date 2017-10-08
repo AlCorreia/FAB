@@ -370,6 +370,34 @@ class Model(object):
             else: print("\n WORD2VEC SCALING NOT SELECTED\n")
         return X
 
+
+    def _highway_network(self, X, num_layers, input_length, second=False):
+        with tf.variable_scope('Highway_network', reuse=second):
+            #X = tf.expand_dims(X, 2) 
+            X = tf.reshape(X,[self.Bs, -1,1,input_length])
+            input_layer = X
+            for i in range(num_layers):
+                with tf.variable_scope('layer_'+str(i), reuse=second):
+                    #Compute Lin1 and Lin2
+                    Lin1_Lin2 = tf.layers.conv2d(input_layer,
+                                    filters=input_length*2,
+                                    kernel_size=1,
+                                    strides=1,
+                                    use_bias=True,
+                                    reuse=second,
+                                    kernel_initializer=self.initializer,
+                                    name="linear")
+                    Lin1, Lin2 = tf.split(
+                                         Lin1_Lin2,
+                                         num_or_size_splits=2,
+                                         axis=3)
+                    #sigmoid(lin1)
+                    weight = tf.sigmoid(Lin1)
+                    #sigmoid*y+(1-sigmoid)*tf.nn.relu(Lin2)
+                    input_layer = input_layer*weight+(1.0-weight)*tf.nn.relu(Lin2)
+            output_highway = tf.squeeze(input_layer)
+        return output_highway
+        
     def _encoder(self, X, Q):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
@@ -1118,9 +1146,22 @@ class Model(object):
                 # Masking
                 Acx_word = tf.multiply(Acx_word, tf.cast(tf.expand_dims(self.xc_mask,2),tf.float32))
                 Acq_word = tf.multiply(Acq_word, tf.cast(tf.expand_dims(self.qc_mask,2),tf.float32))
+                if self.config['model']['highway_type']=='char': #Highway and then concatenate
+                    Acx_word = self._highway_network(tf.tanh(Acx_word), self.config['model']['highway_num_layers'], input_length=self.COs)
+                    Acq_word = self._highway_network(tf.tanh(Acq_word), num_layers=self.config['model']['highway_num_layers'], input_length=self.COs, second=True)
+                    x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
+                    q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
+                elif self.config['model']['highway_type']=='word': #Concatenate and then highway
+                    x_concat = tf.concat([x_scaled, tf.tanh(Acx_word)], axis=2)
+                    q_concat = tf.concat([q_scaled, tf.tanh(Acq_word)], axis=2)
+                    x_scaled = self._highway_network(x_concat, self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs)
+                    q_scaled = self._highway_network(q_concat, num_layers=self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs, second=True)
+                elif self.config['model']['highway_type']=='none': #Only concatenate
                 # Concatenate word2vec and char2word2vec together
-                x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
-                q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
+                    x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
+                    q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
+                else:
+                    raise Exception("Highway_type not chosen in config.json. Set it to word, char or none")
 
         #Dropout to zero a word2vec of a word
         if self.config['train']['dropout_word_passage']<1.0:
