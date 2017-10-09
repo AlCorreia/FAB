@@ -26,7 +26,8 @@ class Char_Embedder(object):
         self.config = config
         self.char_vocabulary_size = len(self.data['shared']['char2idx'])
         self.word_vocabulary_size = len(self.config['model']['emb_mat_unk_words']) + len(self.data['shared']['emb_mat_known_words'])
-        self.embedding_size = 100
+        self.word_embedding_size = 100
+        self.char_embedding_size = 8
         # Run pre-processing
         self.pre_process(2, 2)
 
@@ -38,7 +39,7 @@ class Char_Embedder(object):
         self.target = tf.placeholder('int32', [self.Bs, 1], name='y')
         # Define a embedding matrix with GloVe vectors
         self.glove_emb_mat = tf.placeholder(tf.float32,
-                                          [None, self.embedding_size],
+                                          [None, self.word_embedding_size],
                                           name='new_emb_mat')
         # Define a session
         self.sess = tf.Session()
@@ -58,7 +59,7 @@ class Char_Embedder(object):
                                         self.glove_emb_mat], axis=0)
         # Define the char embedding matrix
         self.char_emb_mat = tf.Variable(
-            tf.random_uniform([self.char_vocabulary_size, self.embedding_size], -1.0, 1.0),
+            tf.random_uniform([self.char_vocabulary_size, self.char_embedding_size], -1.0, 1.0),
             name='char_emb_mat')
 
         # The target is given by a word
@@ -71,15 +72,15 @@ class Char_Embedder(object):
         Ac = self.char2word_embedding(Ac=input_embedding)
 
         nce_weights = tf.Variable(
-            tf.truncated_normal([self.word_vocabulary_size, self.embedding_size],
-                                stddev=1.0 / math.sqrt(self.embedding_size)))
+            tf.truncated_normal([self.word_vocabulary_size, self.word_embedding_size],
+                                stddev=1.0 / math.sqrt(self.word_embedding_size)))
         nce_biases = tf.Variable(tf.zeros([self.word_vocabulary_size]))
 
         self.loss = tf.reduce_mean(
             tf.nn.nce_loss(weights=nce_weights,
                            biases=nce_biases,
                            labels=self.target,
-                           inputs=tf.reshape(Ac, [self.Bs, self.embedding_size]),
+                           inputs=tf.reshape(Ac, [self.Bs, self.word_embedding_size]),
                            num_sampled=num_sampled,
                            num_classes=self.word_vocabulary_size))
 
@@ -88,7 +89,6 @@ class Char_Embedder(object):
                                         optimizer='Adagrad',
                                         summaries=["gradients"],
                                         learning_rate=0.01)
-
 
         loss_summary = tf.summary.scalar('loss', tf.reduce_mean(self.loss))
         self.summary = tf.summary.merge_all()
@@ -184,6 +184,7 @@ class Char_Embedder(object):
 
         for i in tqdm(range(len(self.data['data']['q']))):
             for j in range(len(self.data['data']['q'][i])):
+                pdb.set_trace()
                 data_index = 0
                 while data_index + span <= len(self.data['data']['q'][i][j]):
                     clean_data = list(filter(None, self.data['data']['q'][i][j]))
@@ -203,15 +204,16 @@ class Char_Embedder(object):
 
 
     def char2word_embedding(self, Ac):
-        Ac = tf.reshape(Ac, [self.Bs, -1, self.embedding_size, 1])
+        Ac = tf.reshape(Ac, [self.Bs, -1, self.char_embedding_size, 1])
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
-                                              filters=self.embedding_size,
+                                              filters=self.word_embedding_size,
                                               kernel_size=[self.config['model']['char_convolution_size'], 1],
                                               strides=1,
                                               padding="same",
-                                              activation=None)
-        char_embedded_word = tf.reduce_max(tf.reshape(A_word_convolution, [self.Bs, 1, -1, 100]), axis=2)  # Reduce all info to a vector
-        return tf.reshape(char_embedded_word, [self.Bs, self.embedding_size])
+                                              use_bias=True,
+                                              activation=tf.tanh)
+        char_embedded_word = tf.reduce_max(tf.reshape(A_word_convolution, [self.Bs, 1, -1, self.word_embedding_size]), axis=2)  # Reduce all info to a vector
+        return tf.reshape(char_embedded_word, [self.Bs, self.word_embedding_size])
 
     def get_feed_dict(self, batch_size):
         indices = np.random.randint(len(self.word), size=(batch_size))

@@ -99,6 +99,9 @@ class Model(object):
             self.qc_size = tf.shape(self.qc)
             self.xc_mask = tf.sign(self.xc)
             self.qc_mask = tf.sign(self.qc)
+            self.new_char_emb_mat = tf.placeholder(tf.float32,
+                                                  [None, self.CEs],
+                                                  name='new_emb_mat')
         else:
             self.COs = 0 #No char embedding
         # Redefine some parameters based on the actual tensor dimensions
@@ -377,7 +380,7 @@ class Model(object):
 
     def _highway_network(self, X, num_layers, input_length, second=False):
         with tf.variable_scope('Highway_network', reuse=second):
-            #X = tf.expand_dims(X, 2) 
+            #X = tf.expand_dims(X, 2)
             X = tf.reshape(X,[self.Bs, -1,1,input_length])
             input_layer = X
             for i in range(num_layers):
@@ -401,7 +404,7 @@ class Model(object):
                     input_layer = input_layer*weight+(1.0-weight)*tf.nn.relu(Lin2)
             output_highway = tf.squeeze(input_layer)
         return output_highway
-        
+
     def _encoder(self, X, Q):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
@@ -1135,7 +1138,10 @@ class Model(object):
                 char_emb_mat = tf.get_variable(
                     "char_emb_mat",
                     dtype=tf.float32,
-                    initializer=config['model']['emb_mat_chars'])  # [CVs,CEs]
+                    initializer=config['model']['emb_mat_unk_chars'])  # [CVs,CEs]
+            if self.config['model']['pre_trained_char']:
+                char_emb_mat = tf.concat([word_emb_mat, self.new_char_emb_mat],
+                                         axis=0)
                 # Embedding of characters
                 Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
                 Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
@@ -1461,8 +1467,8 @@ class Model(object):
             return 1  # unknown word
 
         def char2id(char):  # to convert a char to its respective id
-            if char in dataset['shared']['char2idx']:
-                return dataset['shared']['char2idx'][char]
+            if char in dataset['shared']['unk_char2idx']:
+                return dataset['shared']['unk_char2idx'][char]
             else:
                 return 1  # unknown char
 
@@ -1578,6 +1584,8 @@ class Model(object):
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
+        if self.config['model']['pre_trained_char']:
+            feed_dict[self.new_char_emb_mat] = dataset['shared']['emb_mat_known_chars']
 
         return feed_dict
 
