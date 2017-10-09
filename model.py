@@ -42,7 +42,8 @@ class Model(object):
         self.keep_prob_Relu = tf.placeholder_with_default(1.0, shape=(), name='dropout_Relu')
         self.keep_prob_FF = tf.placeholder_with_default(1.0, shape=(), name='dropout_FF')
         self.keep_prob_selector = tf.placeholder_with_default(1.0, shape=(), name='dropout_selector')
-        self.keep_prob_char = tf.placeholder_with_default(1.0, shape=(), name='dropout_char')
+        self.keep_prob_char_pre = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_pre')
+        self.keep_prob_char_post = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_post')
         self.keep_prob_word_passage = tf.placeholder_with_default(1.0, shape=(), name='dropout_word_passage')
 
         # Learning rate with exponential decay
@@ -223,7 +224,8 @@ class Model(object):
         feed_dict['dropout_Relu:0'] = self.config['train']['dropout_Relu']
         feed_dict['dropout_FF:0'] = self.config['train']['dropout_FF']
         feed_dict['dropout_selector:0'] = self.config['train']['dropout_selector']
-        feed_dict['dropout_char:0'] = self.config['train']['dropout_char']
+        feed_dict['dropout_char_pre:0'] = self.config['train']['dropout_char_pre_conv']
+        feed_dict['dropout_char_post:0'] = self.config['train']['dropout_char_post_conv']
         feed_dict['dropout_word_passage:0'] = self.config['train']['dropout_word_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
@@ -300,16 +302,18 @@ class Model(object):
         mask = tf.expand_dims(tf.cast(mask,tf.float32),2)
         Ac = tf.multiply(Ac,mask) #To zero all embeddings
         Ac=tf.expand_dims(Ac,1)
+        if self.config['train']['dropout_char_pre_conv']<1.0:
+            Ac = tf.nn.dropout(Ac, keep_prob=self.keep_prob_char_pre)
         A_word_convolution = tf.layers.conv2d(inputs=Ac,
                                               filters=self.COs,
                                               kernel_size=[1,self.config['model']['char_convolution_size']],
                                               strides=[1, 1],
-                                              padding="same",
-                                              activation=None)
+                                              padding='same',
+                                              activation=tf.tanh)
         A_word_convolution_masked = tf.squeeze(A_word_convolution,1)+tf.cast(1-mask,tf.float32)*(VERY_LOW_NUMBER)#To ignore padding vectors in reduce_max
         char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=1)  # Reduce all info to a vector
-        if self.config['train']['dropout_char']<1.0:
-            char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char)
+        if self.config['train']['dropout_char_post_conv']<1.0:
+            char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char_post)
         return char_embedded_word
 
     def _embed_scaling(self, X, second=False):
@@ -1147,13 +1151,13 @@ class Model(object):
                 Acx_word = tf.multiply(Acx_word, tf.cast(tf.expand_dims(self.xc_mask,2),tf.float32))
                 Acq_word = tf.multiply(Acq_word, tf.cast(tf.expand_dims(self.qc_mask,2),tf.float32))
                 if self.config['model']['highway_type']=='char': #Highway and then concatenate
-                    Acx_word = self._highway_network(tf.tanh(Acx_word), self.config['model']['highway_num_layers'], input_length=self.COs)
-                    Acq_word = self._highway_network(tf.tanh(Acq_word), num_layers=self.config['model']['highway_num_layers'], input_length=self.COs, second=True)
+                    Acx_word = self._highway_network(Acx_word, self.config['model']['highway_num_layers'], input_length=self.COs)
+                    Acq_word = self._highway_network(Acq_word, num_layers=self.config['model']['highway_num_layers'], input_length=self.COs, second=True)
                     x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
                     q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
                 elif self.config['model']['highway_type']=='word': #Concatenate and then highway
-                    x_concat = tf.concat([x_scaled, tf.tanh(Acx_word)], axis=2)
-                    q_concat = tf.concat([q_scaled, tf.tanh(Acq_word)], axis=2)
+                    x_concat = tf.concat([x_scaled, Acx_word], axis=2)
+                    q_concat = tf.concat([q_scaled, Acq_word], axis=2)
                     x_scaled = self._highway_network(x_concat, self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs)
                     q_scaled = self._highway_network(q_concat, num_layers=self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs, second=True)
                 elif self.config['model']['highway_type']=='none': #Only concatenate
