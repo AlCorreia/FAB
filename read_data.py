@@ -37,7 +37,7 @@ def get_word2vec(config, word_counter):
 def create_char2vec(config):
     glove_path = os.path.join(config['glove']['dir'], "glove.{}.{}d.txt".format(config['glove']['corpus'], config['glove']['vec_size']))
     vectors = {}
-    with open(glove_path, 'rb') as f:
+    with open(glove_path, 'r') as f:
         for line in f:
             line_split = line.strip().split(" ")
             vec = np.array(line_split[1:], dtype=float)
@@ -52,7 +52,7 @@ def create_char2vec(config):
                         vectors[char] = (vec, 1)
 
     base_name = os.path.splitext(os.path.basename(glove_path))[0] + '-char.txt'
-    with open(os.path.join(config['glove']['dir'], base_name), 'wb') as f2:
+    with open(os.path.join(config['glove']['dir'], base_name), 'w') as f2:
         for word in vectors:
             avg_vector = np.round(
                 (vectors[word][0] / vectors[word][1]), 6).tolist()
