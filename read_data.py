@@ -254,8 +254,6 @@ def read_data(config, data_type, ref, data_filter=None):
         shared['unk_word2idx'] = {word: idx + 2 for idx, word in #add 2 to UNK and NULL
                               enumerate(word for word, count in word_counter.items()
                                         if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
-    NULL = "-NULL-"
-    UNK = "-UNK-"
 
     if config['model']['pre_trained_char']:
         shared['unk_char2idx'] = {char: idx + 2 for idx, char in
@@ -379,13 +377,10 @@ def get_batch_idxs(config, data_set):
     # Compute number of questions in subgroup
     nQuestions = len(valid_idxs)
     n = 0
-    batch_idxs = set();
+    batch_idxs = set()
     # Choose randomly batch_size questions from the selected subgroup
     while n < config['train']['batch_size']:
-        random_int = randint(0, nQuestions-1)
-        while random_int in batch_idxs:
-            random_int = randint(0, nQuestions-1)
-        batch_idxs.add(random_int)
+        batch_idxs.add(randint(0, nQuestions-1)) # It won't repeat IDs, because it is a set
         n = len(batch_idxs)
     batch_idxs = [valid_idxs[i] for i in batch_idxs]
     batch_idxs.sort()
