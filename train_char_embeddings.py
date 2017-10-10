@@ -114,8 +114,9 @@ class Char_Embedder(object):
         # Initialize all variables
         self.sess.run(tf.global_variables_initializer())
         # Add ops to save and restore the pre-trained chars
-        self.saver = tf.train.Saver({"Pre_trained_chars": self.char_emb_mat},
-                                    max_to_keep=100)
+        self.saver = tf.train.Saver(max_to_keep=100)
+        self.saver_emb = tf.train.Saver({"char_emb_mat": self.char_emb_mat},
+                                        max_to_keep=100)
 
     def train(self):
         feed_dict = self.get_feed_dict(100)
@@ -124,6 +125,7 @@ class Char_Embedder(object):
 
     def save(self):
         self.saver.save(self.sess, 'char_embedding/model.ckpt')
+        self.saver.save(self.sess, 'char_embedding/pre_trained_char_emb')
 
     def char2id(self, char):  # to convert a char to its respective id
         def charsearch(char, known_or_unknown):
