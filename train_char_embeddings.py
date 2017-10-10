@@ -103,9 +103,9 @@ class Char_Embedder(object):
             w = csv.writer(f, delimiter='\t')
             w.writerow(['Name', 'ID'])
             for key, value in self.data['shared']['unk_char2idx'].items():
-                w.writerow([self.char2id(value), value])
+                w.writerow([self.char2id(key), key])
             for key, value in self.data['shared']['known_char2idx'].items():
-                w.writerow([self.char2id(value), value])
+                w.writerow([self.char2id(key), key])
         # Link this tensor to its metadata file (e.g. labels).
         embedding.metadata_path = os.path.join('metadata.tsv')
         # Saves a configuration file that TensorBoard will read during startup.
