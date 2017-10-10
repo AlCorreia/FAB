@@ -64,22 +64,14 @@ def get_char2vec(config, char_counter):
     # If there is no pre-trained char embedding file, create one
     if os.path.isfile(char_path) is False:
         create_char2vec(config)
-    sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
-    total = sizes[config['glove']['corpus']]
     char2vec_dict = {}
     with open(char_path, 'r', encoding='utf-8') as fh:
-        for line in tqdm(fh, total=total):
+        for line in fh:
             array = line.lstrip().rstrip().split(" ")
             char = array[0]
             vector = list(map(float, array[1:]))
             if char in char_counter:
                 char2vec_dict[char] = vector
-            elif char.capitalize() in char_counter:
-                char2vec_dict[char.capitalize()] = vector
-            elif char.lower() in char_counter:
-                char2vec_dict[char.lower()] = vector
-            elif char.upper() in char_counter:
-                char2vec_dict[char.upper()] = vector
 
     return char2vec_dict
 
