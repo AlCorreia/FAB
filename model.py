@@ -319,7 +319,7 @@ class Model(object):
             char_embedded_word = tf.nn.dropout(char_embedded_word, keep_prob=self.keep_prob_char_post)
         return char_embedded_word
 
-    def _embed_scaling(self, X, second=False):
+    def _embed_scaling(self, X, inp_size, out_size, second=False):
         length_X = X.get_shape()[1]  # number of words in the passage
         # If the word2vec vector is scaled by a matrix
         # Scaling word2vec matrices before adding encoder
@@ -330,18 +330,18 @@ class Model(object):
                             initializer=1.0)
                 if self.config['model_options']['use_bias']:
                     bias = tf.get_variable('bias',
-                                           shape=[self.WEs],
+                                           shape=[inp_size],
                                            initializer=tf.zeros_initializer())
                     X = tf.multiply(weigths, X) + bias
                 else:
                     X = tf.multiply(weigths, X)
             elif self.config['model_options']['word2vec_scaling']=='vector':
                 weigths = tf.get_variable(
-                            'vector', shape=[self.WEs],
+                            'vector', shape=[inp_size],
                             initializer=self.initializer)
                 if self.config['model_options']['use_bias']:
                     bias = tf.get_variable('bias',
-                                           shape=[self.WEs],
+                                           shape=[inp_size],
                                            initializer=tf.zeros_initializer())
                     X = tf.multiply(weigths, X) + bias
                 else:
@@ -351,24 +351,24 @@ class Model(object):
                     # If the scaling matrix was previously trained
                     # In order to be orthonormal
                     if self.config['model_options']['word2vec_orthonormal_scaling']:
-                        weights_init = np.random.random((1, 1, self.WEs, self.WEs)).astype(np.float32)  # might not work properly if WEs different from WEAs.
+                        weights_init = np.random.random((1, 1, inp_size, inp_size)).astype(np.float32)  # might not work properly if WEs different from WEAs.
                         _, _, U = np.linalg.svd(weights_init, full_matrices=False)
                         weigths = tf.get_variable(
                                     'kernel',
-                                    initializer=U[...,0:self.WEOs])
+                                    initializer=U[...,0:out_size])
                     else:
                         weigths = tf.get_variable(
                                     'kernel',
-                                    shape=[1, 1, self.WEs, self.WEOs],
+                                    shape=[1, 1, inp_size, out_size],
                                     initializer=self.initializer)
                     if self.config['model_options']['use_bias']:
                         bias = tf.get_variable('bias',
-                                               shape=[self.WEOs],
+                                               shape=[out_size],
                                                initializer=tf.zeros_initializer())
                 X = tf.expand_dims(X, 2)
-                X.set_shape([self.Bs, length_X, 1, self.WEs])
+                X.set_shape([self.Bs, length_X, 1, inp_size])
                 X = tf.squeeze(tf.layers.conv2d(X,
-                                                filters=self.WEOs,
+                                                filters=out_size,
                                                 kernel_size=1,
                                                 strides=1,
                                                 use_bias=self.config['model_options']['use_bias'],
@@ -1128,10 +1128,14 @@ class Model(object):
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
 
-        Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
-        Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
-        x_scaled = self._embed_scaling(Ax)
-        q_scaled = self._embed_scaling(Aq, second=True)
+            Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
+            Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
+            if self.config['model']['word2vec_scaling']:
+                x_scaled = self._embed_scaling(Ax, inp_size=self.WEs, out_size=self.WEOs)
+                q_scaled = self._embed_scaling(Aq, inp_size=self.WEs, out_size=self.WEOs, second=True)
+            else:
+                x_scaled = Ax
+                q_scaled = Aq
 
         if self.config['model']['char_embedding']:
             with tf.variable_scope("char_emb"):
@@ -1167,15 +1171,24 @@ class Model(object):
                     Acq_word = self._highway_network(Acq_word, num_layers=self.config['model']['highway_num_layers'], input_length=self.COs, second=True)
                     x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
                     q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
+                    if self.config['model']['char&word2vec_scaling']:
+                        x_scaled = self._embed_scaling(x_scaled, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs)
+                        q_scaled = self._embed_scaling(q_scaled, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs, second=True)
                 elif self.config['model']['highway_type']=='word': #Concatenate and then highway
                     x_concat = tf.concat([x_scaled, Acx_word], axis=2)
                     q_concat = tf.concat([q_scaled, Acq_word], axis=2)
+                    if self.config['model']['char&word2vec_scaling']:
+                        x_concat = self._embed_scaling(x_concat, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs)
+                        q_concat = self._embed_scaling(q_concat, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs, second=True)
                     x_scaled = self._highway_network(x_concat, self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs)
                     q_scaled = self._highway_network(q_concat, num_layers=self.config['model']['highway_num_layers'], input_length=self.COs+self.WEOs, second=True)
                 elif self.config['model']['highway_type']=='none': #Only concatenate
                 # Concatenate word2vec and char2word2vec together
                     x_scaled = tf.concat([x_scaled, Acx_word], axis=2)
                     q_scaled = tf.concat([q_scaled, Acq_word], axis=2)
+                    if self.config['model']['char&word2vec_scaling']:
+                        x_scaled = self._embed_scaling(x_scaled, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs)
+                        q_scaled = self._embed_scaling(q_scaled, inp_size=self.WEs+self.COs, out_size=self.WEs+self.COs, second=True)
                 else:
                     raise Exception("Highway_type not chosen in config.json. Set it to word, char or none")
 
