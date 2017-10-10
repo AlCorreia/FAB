@@ -24,7 +24,7 @@ class Char_Embedder(object):
         self.data = read_data(config, 'train', ref=False, data_filter=True)
         config = update_config(config, self.data)
         self.config = config
-        self.char_vocabulary_size = len(self.data['shared']['char2idx'])
+        self.char_vocabulary_size = len(self.data['shared']['emb_mat_known_chars']) + len(self.data['shared']['emb_mat_unk_chars'])
         self.word_vocabulary_size = len(self.config['model']['emb_mat_unk_words']) + len(self.data['shared']['emb_mat_known_words'])
         self.word_embedding_size = 100
         self.char_embedding_size = 8
@@ -101,7 +101,7 @@ class Char_Embedder(object):
         # Create metadata with char ids
         with open('char_embedding/metadata.tsv', 'w') as f:  # Just use 'w' mode in 3.x
             w = csv.writer(f, delimiter='\t')
-            for key, value in self.data['shared']['char2idx'].items():
+            for key, value in self.data['shared']['unk_char2idx'].items():
                 w.writerow([key])
         # Link this tensor to its metadata file (e.g. labels).
         embedding.metadata_path = os.path.join('metadata.tsv')
@@ -110,9 +110,9 @@ class Char_Embedder(object):
 
         # Initialize all variables
         self.sess.run(tf.global_variables_initializer())
-        # Add ops to save and restore all the variables.
-        self.saver = tf.train.Saver(max_to_keep=100)
-
+        # Add ops to save and restore the pre-trained chars
+        self.saver = tf.train.Saver({"Pre_trained_chars": self.char_emb_mat},
+                                    max_to_keep=100)
 
     def train(self):
         feed_dict = self.get_feed_dict(100)
@@ -123,10 +123,26 @@ class Char_Embedder(object):
         self.saver.save(self.sess, 'char_embedding/model.ckpt')
 
     def char2id(self, char):  # to convert a char to its respective id
-        if char in self.data['shared']['char2idx']:
-            return self.data['shared']['char2idx'][char]
-        else:
-            return 1  # unknown char
+        def charsearch(char, known_or_unknown):
+            if char in self.data['shared'][known_or_unknown]:
+                return self.data['shared'][known_or_unknown][char]
+            elif char.capitalize() in self.data['shared'][known_or_unknown]:
+                return self.data['shared'][known_or_unknown][char.capitalize()]
+            elif char.lower() in self.data['shared'][known_or_unknown]:
+                return self.data['shared'][known_or_unknown][char.lower()]
+            elif char.upper() in self.data['shared'][known_or_unknown]:
+                return self.data['shared'][known_or_unknown][char.upper()]
+            else:
+                return 0
+
+        ID = charsearch(char, 'known_char2idx')
+        if ID != 0:  # if it was found
+            return ID + len(self.data['shared']['emb_mat_unk_chars'])
+        ID = charsearch(char, 'unk_char2idx')
+        if ID != 0:  # if it was found
+            return ID
+        # if it was not found in any
+        return 1  # unknown char
 
     def word2id(self, word):  # to convert a word to its respective id
         def wordsearch(word, known_or_unknown):
@@ -168,36 +184,47 @@ class Char_Embedder(object):
 
         for i in tqdm(range(len(self.data['shared']['x']))):
             for j in range(len(self.data['shared']['x'][i])):
-                data_index = 0
-                while data_index + span <= len(self.data['shared']['x'][i][j]):
-                    clean_data = list(filter(None, self.data['shared']['x'][i][j]))
-                    buffer.extend(clean_data[data_index:data_index + span])
-                    target = skip_window  # target label at the center of the buffer
-                    targets_to_avoid = [skip_window]
-                    for k in range(num_skips):
-                        while target in targets_to_avoid:
-                            target = random.randint(0, span - 1)
-                        targets_to_avoid.append(target)
-                        self.word.append(list(map(self.char2id, buffer[skip_window])))
-                        self.labels.append(self.word2id(buffer[target]))
-                    data_index += span
+                clean_data = list(filter(None, self.data['shared']['x'][i][j]))
+                for k in clean_data:
+                    self.word.append(list(map(self.char2id, k)))
+                    self.labels.append(self.word2id(k))
+                # data_index = 0
+                # while data_index + span <= len(self.data['shared']['x'][i][j]):
+                #     clean_data = list(filter(None, self.data['shared']['x'][i][j]))
+                #     buffer.extend(clean_data[data_index:data_index + span])
+                #     target = skip_window  # target label at the center of the buffer
+                #     targets_to_avoid = [skip_window]
+                #     self.word.append(list(map(self.char2id, buffer[skip_window])))
+                #     self.labels.append(self.word2id(buffer[skip_window]))
+                #     for k in range(num_skips):
+                #         while target in targets_to_avoid:
+                #             target = random.randint(0, span - 1)
+                #         targets_to_avoid.append(target)
+                #         self.word.append(list(map(self.char2id, buffer[skip_window])))
+                #         self.labels.append(self.word2id(buffer[target]))
+                #     data_index += span
 
         for i in tqdm(range(len(self.data['data']['q']))):
             for j in range(len(self.data['data']['q'][i])):
-                pdb.set_trace()
-                data_index = 0
-                while data_index + span <= len(self.data['data']['q'][i][j]):
-                    clean_data = list(filter(None, self.data['data']['q'][i][j]))
-                    buffer.extend(clean_data[data_index:data_index + span])
-                    target = skip_window  # target label at the center of the buffer
-                    targets_to_avoid = [skip_window]
-                    for k in range(num_skips):
-                        while target in targets_to_avoid:
-                            target = random.randint(0, span - 1)
-                        targets_to_avoid.append(target)
-                        self.word.append(list(map(self.char2id, buffer[skip_window])))
-                        self.labels.append(self.word2id(buffer[target]))
-                    data_index += span
+                clean_data = list(filter(None, self.data['data']['q'][i][j]))
+                for k in clean_data:
+                    self.word.append(list(map(self.char2id, k)))
+                    self.labels.append(self.word2id(k))
+                # data_index = 0
+                # while data_index + span <= len(self.data['data']['q'][i][j]):
+                #     clean_data = list(filter(None, self.data['data']['q'][i][j]))
+                #     buffer.extend(clean_data[data_index:data_index + span])
+                #     target = skip_window  # target label at the center of the buffer
+                #     targets_to_avoid = [skip_window]
+                #     self.word.append(list(map(self.char2id, buffer[skip_window])))
+                #     self.labels.append(self.word2id(buffer[skip_window]))
+                #     for k in range(num_skips):
+                #         while target in targets_to_avoid:
+                #             target = random.randint(0, span - 1)
+                #         targets_to_avoid.append(target)
+                #         self.word.append(list(map(self.char2id, buffer[skip_window])))
+                #         self.labels.append(self.word2id(buffer[target]))
+                #     data_index += span
 
         self.word = self.pad_chars(self.word)
         self.labels = np.array(self.labels).astype(int)
