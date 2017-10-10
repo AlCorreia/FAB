@@ -1146,7 +1146,7 @@ class Model(object):
                         initializer=self.config['model']['emb_mat_unk_chars'])  # [CVs,CEs]:
                     char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
                                          axis=0)
-                else: #There are not pre-trained characters. 
+                else: #There are not pre-trained characters.
                     char_emb_mat = tf.get_variable(
                         "char_emb_mat",
                         dtype=tf.float32,
@@ -1485,11 +1485,27 @@ class Model(object):
             # if it was not found in any
             return 1  # unknown word
 
-        def char2id(char):  # to convert a char to its respective id
-            if char in dataset['shared']['unk_char2idx']:
-                return dataset['shared']['unk_char2idx'][char]
-            else:
-                return 1  # unknown char
+        def char2id(self, char):  # to convert a char to its respective id
+            def charsearch(char, known_or_unknown):
+                if char in self.data['shared'][known_or_unknown]:
+                    return self.data['shared'][known_or_unknown][char]
+                elif char.capitalize() in self.data['shared'][known_or_unknown]:
+                    return self.data['shared'][known_or_unknown][char.capitalize()]
+                elif char.lower() in self.data['shared'][known_or_unknown]:
+                    return self.data['shared'][known_or_unknown][char.lower()]
+                elif char.upper() in self.data['shared'][known_or_unknown]:
+                    return self.data['shared'][known_or_unknown][char.upper()]
+                else:
+                    return 0
+
+            ID = charsearch(char, 'known_char2idx')
+            if ID != 0:  # if it was found
+                return ID + len(self.data['shared']['emb_mat_unk_chars'])
+            ID = charsearch(char, 'unk_char2idx')
+            if ID != 0:  # if it was found
+                return ID
+            # if it was not found in any
+            return 1  # unknown char
 
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
