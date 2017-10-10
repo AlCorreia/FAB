@@ -1488,12 +1488,6 @@ class Model(object):
             def charsearch(char, known_or_unknown):
                 if char in dataset['shared'][known_or_unknown]:
                     return dataset['shared'][known_or_unknown][char]
-                elif char.capitalize() in dataset['shared'][known_or_unknown]:
-                    return dataset['shared'][known_or_unknown][char.capitalize()]
-                elif char.lower() in dataset['shared'][known_or_unknown]:
-                    return dataset['shared'][known_or_unknown][char.lower()]
-                elif char.upper() in dataset['shared'][known_or_unknown]:
-                    return dataset['shared'][known_or_unknown][char.upper()]
                 else:
                     return 0
 
@@ -1501,7 +1495,7 @@ class Model(object):
             if ID != 0:  # if it was found
                 return ID + len(dataset['shared']['emb_mat_unk_chars'])
             ID = charsearch(char, 'unk_char2idx')
-            if ID != 0:  # if it was found
+            if ID != 0 or char=="-NULL-":  # if it was found
                 return ID
             # if it was not found in any
             return 1  # unknown char
