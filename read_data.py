@@ -256,8 +256,6 @@ def read_data(config, data_type, ref, data_filter=None):
                                         if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
     NULL = "-NULL-"
     UNK = "-UNK-"
-    shared['unk_word2idx'][NULL] = 0
-    shared['unk_word2idx'][UNK] = 1
 
     if config['model']['pre_trained_char']:
         shared['unk_char2idx'] = {char: idx + 2 for idx, char in
@@ -384,7 +382,10 @@ def get_batch_idxs(config, data_set):
     batch_idxs = set();
     # Choose randomly batch_size questions from the selected subgroup
     while n < config['train']['batch_size']:
-        batch_idxs.add(randint(0, nQuestions-1))
+        random_int = randint(0, nQuestions-1)
+        while random_int in batch_idxs:
+            random_int = randint(0, nQuestions-1)
+        batch_idxs.add(random_int)
         n = len(batch_idxs)
     batch_idxs = [valid_idxs[i] for i in batch_idxs]
     batch_idxs.sort()
