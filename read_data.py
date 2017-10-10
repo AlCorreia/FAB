@@ -61,6 +61,7 @@ def create_char2vec(config):
 
 def get_char2vec(config, char_counter):
     char_path = os.path.join(config['glove']['dir'], "glove.{}.{}d-char.txt".format(config['glove']['corpus'], config['glove']['vec_size']))
+    # If there is no pre-trained char embedding file, create one
     if os.path.isfile(char_path) is False:
         create_char2vec(config)
     sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
@@ -220,7 +221,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     save(config, data, shared, out_name)
 
 
-def read_data(config, data_type, ref, data_filter = None):
+def read_data(config, data_type, ref, data_filter=None):
     data_path = os.path.join(config['directories']['dir'], "data_{}.json".format(data_type))
     shared_path = os.path.join(config['directories']['dir'], "shared_{}.json".format(data_type))
     with open(data_path, 'r') as fh:
@@ -311,6 +312,7 @@ def read_data(config, data_type, ref, data_filter = None):
                                                    for idx in range(char_vocab_size)]) #create random vectors for new words
         else:
             char_vocab_size = len(shared['unk_char2idx'])
+            shared['known_char2idx'] = {}
             shared['emb_mat_unk_chars'] = np.array([np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])),
                                                                           config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
                                            for idx in range(char_vocab_size)]) #create random vectors for new words

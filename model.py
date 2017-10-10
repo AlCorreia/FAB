@@ -1462,7 +1462,6 @@ class Model(object):
                     text_out.append(dict_len)
             return text_out, dictionary, word_size
 
-
         def wordsearch(word, known_or_unknown):
             if word in dataset['shared'][known_or_unknown]:
                 return dataset['shared'][known_or_unknown][word]
@@ -1485,22 +1484,22 @@ class Model(object):
             # if it was not found in any
             return 1  # unknown word
 
-        def char2id(self, char):  # to convert a char to its respective id
+        def char2id(char):  # to convert a char to its respective id
             def charsearch(char, known_or_unknown):
-                if char in self.data['shared'][known_or_unknown]:
-                    return self.data['shared'][known_or_unknown][char]
-                elif char.capitalize() in self.data['shared'][known_or_unknown]:
-                    return self.data['shared'][known_or_unknown][char.capitalize()]
-                elif char.lower() in self.data['shared'][known_or_unknown]:
-                    return self.data['shared'][known_or_unknown][char.lower()]
-                elif char.upper() in self.data['shared'][known_or_unknown]:
-                    return self.data['shared'][known_or_unknown][char.upper()]
+                if char in dataset['shared'][known_or_unknown]:
+                    return dataset['shared'][known_or_unknown][char]
+                elif char.capitalize() in dataset['shared'][known_or_unknown]:
+                    return dataset['shared'][known_or_unknown][char.capitalize()]
+                elif char.lower() in dataset['shared'][known_or_unknown]:
+                    return dataset['shared'][known_or_unknown][char.lower()]
+                elif char.upper() in dataset['shared'][known_or_unknown]:
+                    return dataset['shared'][known_or_unknown][char.upper()]
                 else:
                     return 0
 
             ID = charsearch(char, 'known_char2idx')
             if ID != 0:  # if it was found
-                return ID + len(self.data['shared']['emb_mat_unk_chars'])
+                return ID + len(dataset['shared']['emb_mat_unk_chars'])
             ID = charsearch(char, 'unk_char2idx')
             if ID != 0:  # if it was found
                 return ID
@@ -1569,7 +1568,7 @@ class Model(object):
             x, new_seq_y, max_size_x = padding(x, label_smoothing=label_smoothing)
             q, _, max_size_q = padding(q)
 
-        if self.config['model']['char_embedding']: #Padding chars
+        if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
             longest_word_size = ordered_words[-1][1][1]
             number_of_words = len(ordered_words)
@@ -1590,9 +1589,9 @@ class Model(object):
             for i in range(number_of_words):
                 mapping[ordered_words[i][1][0]]=i+1
                 if len(ordered_words[i][0])>index:
-                    long_words_list.append(list(map(char2id,ordered_words[i][0])))
+                    long_words_list.append(list(map(char2id, ordered_words[i][0])))
                 else:
-                    short_words_list.append(list(map(char2id,ordered_words[i][0])))
+                    short_words_list.append(list(map(char2id, ordered_words[i][0])))
             for i in range(len(batch_idxs)):
                 xc[i] = list(map(lambda y: mapping[y], xc[i]))
                 qc[i] = list(map(lambda y: mapping[y], qc[i]))
