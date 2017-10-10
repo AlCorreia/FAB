@@ -1135,13 +1135,19 @@ class Model(object):
 
         if self.config['model']['char_embedding']:
             with tf.variable_scope("char_emb"):
-                char_emb_mat = tf.get_variable(
-                    "char_emb_mat",
-                    dtype=tf.float32,
-                    initializer=config['model']['emb_mat_unk_chars'])  # [CVs,CEs]
-            if self.config['model']['pre_trained_char']:
-                char_emb_mat = tf.concat([word_emb_mat, self.new_char_emb_mat],
+                if self.config['model']['pre_trained_char']:
+                    char_emb_mat = tf.get_variable(
+                        "char_emb_mat",
+                        dtype=tf.float32,
+                        initializer=self.config['model']['emb_mat_unk_chars'])  # [CVs,CEs]:
+                    char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
                                          axis=0)
+                else: #There are not pre-trained characters. 
+                    char_emb_mat = tf.get_variable(
+                        "char_emb_mat",
+                        dtype=tf.float32,
+                        shape=[self.CVs, self.CEs],
+                        initializer=self.initializer)  # [CVs,CEs]
                 # Embedding of characters
                 Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
                 Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
