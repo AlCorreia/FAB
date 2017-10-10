@@ -68,6 +68,11 @@ class Model(object):
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
+        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs] #size of x attention model/x processing size/size of q attention mode
+        self.q_reduction = config['model']['q_variables_reduction']
+        q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/self.MHs)*self.MHs)
+        q_FFHs = int(self.FFHs*self.q_reduction)
+        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs]#size of q attention model/q processing size/size of x attention model
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
@@ -506,49 +511,49 @@ class Model(object):
                                             reuse=True,
                                             name="conv2d"))  # XW
         return X
-    def _attention_layer(self, X1, mask, X2=None, scope=None):
+    def _attention_layer(self, X1, mask, X2=None, scope=None, comp_size=None):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         with tf.variable_scope(scope):
             length_X1 = X1.get_shape()[1]
             X1 = tf.expand_dims(X1, 2)
-            X1.set_shape([self.Bs, length_X1, 1, self.WEAs])
+            X1.set_shape([self.Bs, length_X1, 1, comp_size[0]])
             if X2 is None:
                 length_X2 = length_X1
                 # (SELF ATTENTION)
                 # If X2 is None Compute Q = X1*WQ, K = X1*WK, V=X1*WV
                 QKV = tf.squeeze(tf.layers.conv2d(X1,
-                                                  filters=self.WEPs*3,
+                                                  filters=comp_size[1]*3,
                                                   kernel_size=1,
                                                   strides=1,
                                                   kernel_initializer=self.initializer,
                                                   name='QKV_Comp'))
                 Q, K, V = tf.split(
                     QKV,
-                    num_or_size_splits=[self.WEPs, self.WEPs, self.WEPs],
+                    num_or_size_splits=[comp_size[1], comp_size[1], comp_size[1]],
                     axis=2)
             else:
                 # (CROSS ATTENTION)
                 # If X2 is not none, compute Q = X1*WQ, K = X2*WK, V=X1*WV
                 length_X2 = X2.get_shape()[1]
                 KV = tf.squeeze(tf.layers.conv2d(X1,
-                                                 filters=self.WEPs*2,
+                                                 filters=comp_size[1]*2,
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
                                                  name='KV_Comp'))
                 K, V = tf.split(KV,
-                                num_or_size_splits=[self.WEPs, self.WEPs],
+                                num_or_size_splits=[comp_size[1], comp_size[1]],
                                 axis=2)
                 X2 = tf.expand_dims(X2, 2)
-                X2.set_shape([self.Bs, length_X2, 1, self.WEAs])
+                X2.set_shape([self.Bs, length_X2, 1, comp_size[2]])
                 Q = tf.squeeze(tf.layers.conv2d(X2,
-                                                filters=self.WEPs,
+                                                filters=comp_size[1],
                                                 kernel_size=1,
                                                 strides=1,
                                                 kernel_initializer=self.initializer,
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
-                X2.set_shape([self.Bs, length_X2, self.WEAs])
+                X2.set_shape([self.Bs, length_X2, comp_size[2]])
             X1 = tf.squeeze(X1)
             X1.set_shape([self.Bs, length_X1, self.WEAs])
 
@@ -562,10 +567,10 @@ class Model(object):
                 K = tf.expand_dims(tf.reduce_max(K, axis=0), axis=0)
                 V = tf.expand_dims(tf.reduce_max(V, axis=0), axis=0)
                 MHs = 1
-                WEPs = int(self.WEPs/self.MHs)
+                WEPs = int(comp_size[1]/self.MHs)
             else:
                 MHs = self.MHs
-                WEPs = self.WEPs
+                WEPs = comp_size[1]
             # Compute transpose of K for multiplyting Q*K^T
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
@@ -604,7 +609,7 @@ class Model(object):
             # Compute softmax(Q*K^T)*V*WO
             x_final = tf.squeeze(
                 tf.layers.conv2d(tf.expand_dims(x_attention_concat, 2),
-                                 filters=self.WEAs,
+                                 filters=comp_size[0],
                                  kernel_size=1,
                                  strides=1,
                                  name='Att_Comp'))
@@ -640,16 +645,16 @@ class Model(object):
                 normalized_x = normalized_x * W_Scale + b_Scale
         return normalized_x
 
-    def _FeedForward_NN(self, X, scope=None):
+    def _FeedForward_NN(self, X, scope=None, comp_size=None):
         # Starting variables
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            X.set_shape([self.Bs, length_X, 1, comp_size[0]])
             # Affine operation followed by Relu.
             # It is done by a convolution and it is the same as X*W+b
             affine_op = tf.layers.conv2d(X,
-                                         filters=self.FFHs,
+                                         filters=comp_size[3],
                                          kernel_size=1,
                                          strides=1,
                                          use_bias=True,
@@ -659,11 +664,11 @@ class Model(object):
             if self.config['train']['dropout_Relu'] < 1.0:  # This is done to save memory if dropout is not used
                 affine_op = tf.nn.dropout(affine_op, keep_prob=self.keep_prob_Relu)
             X = tf.squeeze(X)
-            X.set_shape([self.Bs, length_X, self.WEAs])
+            X.set_shape([self.Bs, length_X, comp_size[0]])
             # Second affine oepration.
             # It is done by a convolution and it is the same as X*W+b
             output = tf.squeeze(tf.layers.conv2d(affine_op,
-                                                 filters=self.WEAs,
+                                                 filters=comp_size[0],
                                                  kernel_size=1,
                                                  strides=1,
                                                  use_bias=True,
@@ -680,31 +685,38 @@ class Model(object):
         # Defining masks and scopes
         if switch:
             X1 = X
+            X1_comp_size = self.x_comp_size
             X2 = Q
+            X2_comp_size = self.q_comp_size
             X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq'
         else:
             X1 = Q
+            X1_comp_size = self.q_comp_size
             X2 = X
+            X2_comp_size = self.x_comp_size
             X1X1, X2X2, X2X1, X1X2 = 'qq', 'xx', 'xq', 'qx'
         with tf.variable_scope(scope):
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
                                        self._attention_layer(X1=X1,
                                                        mask=mask[X1X1],
-                                                       scope=X1X1)),
+                                                       scope=X1X1,
+                                                       comp_size=X1_comp_size)),
                                 scope='norm_'+X1X1)
 
             output_1 = FF_X1X1 = self._layer_normalization(
                                     tf.add(att_layer_X1X1,
                                            self._FeedForward_NN(att_layer_X1X1,
-                                                          'FF' + X1X1)),
+                                                          'FF' + X1X1,
+                                                           comp_size=X1_comp_size)),
                                     scope='norm_FF_'+X1X1)
 
             att_layer_X2X2 = self._layer_normalization(
                                 tf.add(X2,
                                        self._attention_layer(X1=X2,
                                                        mask=mask[X2X2],
-                                                       scope=X2X2)),
+                                                       scope=X2X2,
+                                                       comp_size=X2_comp_size)),
                                 scope='norm_' + X2X2)
 
             att_layer_X1X2 = self._layer_normalization(
@@ -713,13 +725,15 @@ class Model(object):
                                                        X1=FF_X1X1,
                                                        X2=att_layer_X2X2,
                                                        mask=mask[X2X1],
-                                                       scope=X2X1)),
+                                                       scope=X2X1,
+                                                       comp_size=X1_comp_size)),
                                 scope='norm_'+X2X1)
 
             output_2 = FF_X2X2 = self._layer_normalization(
                                     tf.add(att_layer_X1X2,
                                            self._FeedForward_NN(att_layer_X1X2,
-                                                                'FF_' + X2X2)),
+                                                                'FF_' + X2X2,
+                                                                comp_size=X2_comp_size)),
                                     scope='norm_FF_' + X2X2)
             if switch:
                 return output_2, output_1
@@ -734,13 +748,15 @@ class Model(object):
                                        self._attention_layer(
                                                        X1=Q,
                                                        mask=mask['qq'],
-                                                       scope='QQ')),
+                                                       scope='QQ',
+                                                       comp_size=self.q_comp_size)),
                                 scope='norm_QQ')
             # FF neural network Q_Layer
             FF_QQ = self._layer_normalization(
                         tf.add(att_layer_QQ,
                                self._FeedForward_NN(att_layer_QQ,
-                                                    'FF_QQ')),
+                                                    'FF_QQ',
+                                                    comp_size=self.q_comp_size)),
                         scope='norm_FF_QQ')
             # Self-Atttention Layer X
             att_layer_XX = self._layer_normalization(
@@ -748,13 +764,15 @@ class Model(object):
                                        self._attention_layer(
                                                        X1=X,
                                                        mask=mask['xx'],
-                                                       scope='XX')),
+                                                       scope='XX',
+                                                       comp_size=self.x_comp_size)),
                                 scope='norm_XX')
             # FF neural network X_Layer
             FF_XX = self._layer_normalization(
                                 tf.add(att_layer_XX,
                                        self._FeedForward_NN(att_layer_XX,
-                                                            'FF_XX')),
+                                                            'FF_XX',
+                                                            comp_size=self.x_comp_size)),
                                 scope='norm_FF_XX')
             # Cross attention of X and Q:
             att_layer_XQ = self._layer_normalization(
@@ -763,7 +781,8 @@ class Model(object):
                                                        X1=FF_XX,
                                                        X2=att_layer_QQ,
                                                        mask=mask['qx'],
-                                                       scope='QX')),
+                                                       scope='QX',
+                                                       comp_size=self.x_comp_size)),
                                 scope='norm_QX')
             att_layer_QX = self._layer_normalization(
                                 tf.add(att_layer_XX,
@@ -771,18 +790,21 @@ class Model(object):
                                                        X1=FF_QQ,
                                                        X2=att_layer_XX,
                                                        mask=mask['xq'],
-                                                       scope='XQ')),
+                                                       scope='XQ',
+                                                       comp_size=self.q_comp_size)),
                                 scope='norm_XQ')
             # Output of X and Q:
             output_Q = self._layer_normalization(
                             tf.add(att_layer_XQ,
                                    self._FeedForward_NN(att_layer_XQ,
-                                                        'FF_Q_out')),
+                                                        'FF_Q_out',
+                                                        comp_size=self.x_comp_size)),
                             scope='norm_FF_Q_out')
             output_X = self._layer_normalization(
                             tf.add(att_layer_QX,
                                    self._FeedForward_NN(att_layer_QX,
-                                                        'FF_X_out')),
+                                                        'FF_X_out',
+                                                        comp_size=self.q_comp_size)),
                             scope='norm_FF_X_out')
             return output_Q, output_X
 

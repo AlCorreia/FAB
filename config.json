@@ -64,6 +64,7 @@
 		"variance_char_init":1.0,
 		"highway_type":"word",
 		"highway_num_layers":2,
+		"q_variables_reduction":1.0,
         	"y1_sel":"double_conv",
         	"y2_sel":"direct2"
 	},
