@@ -207,8 +207,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # if args.debug:
             #     break
     word2vec_dict = get_word2vec(config, word_counter)
-    if config['model']['char_embedding']:
-        char2vec_dict = get_char2vec(config, char_counter)
+    char2vec_dict = get_char2vec(config, char_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
