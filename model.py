@@ -1436,11 +1436,11 @@ class Model(object):
         ce_loss = tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits_y1, labels=self.y)
         # tf.add_to_collection('losses', ce_loss)
-        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y2_sel']=='direct2'):
+        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2'):
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
-            self.ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                logits=self.logits_y2, labels=self.y2))
+            self.ce_loss2 = tf.nn.softmax_cross_entropy_with_logits(
+                logits=self.logits_y2, labels=self.y2)
         # tf.add_to_collection("losses", ce_loss2)
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
