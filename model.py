@@ -812,6 +812,61 @@ class Model(object):
                             scope='norm_FF_X_out')
             return output_Q, output_X
 
+    def _one_layer_symmetric_small(self, Q, X, mask, scope, switch=False):  # Although switch input is not used here, it was added for compatibility with one layer function.
+        with tf.variable_scope(scope):
+            # Self-Atttention Layer Q
+            att_layer_QQ = self._layer_normalization(
+                                tf.add(Q,
+                                       self._attention_layer(
+                                                       X1=Q,
+                                                       mask=mask['qq'],
+                                                       scope='QQ',
+                                                       comp_size=self.q_comp_size)),
+                                scope='norm_QQ')
+            # FF neural network Q_Layer
+            FF_QQ = self._layer_normalization(
+                        tf.add(att_layer_QQ,
+                               self._FeedForward_NN(att_layer_QQ,
+                                                    'FF_QQ',
+                                                    comp_size=self.q_comp_size)),
+                        scope='norm_FF_QQ')
+            # Self-Atttention Layer X
+            att_layer_XX = self._layer_normalization(
+                                tf.add(X,
+                                       self._attention_layer(
+                                                       X1=X,
+                                                       mask=mask['xx'],
+                                                       scope='XX',
+                                                       comp_size=self.x_comp_size)),
+                                scope='norm_XX')
+            # FF neural network X_Layer
+            FF_XX = self._layer_normalization(
+                                tf.add(att_layer_XX,
+                                       self._FeedForward_NN(att_layer_XX,
+                                                            'FF_XX',
+                                                            comp_size=self.x_comp_size)),
+                                scope='norm_FF_XX')
+            # Cross attention of X and Q:
+            output_Q = self._layer_normalization(
+                                tf.add(FF_QQ,
+                                       self._attention_layer(
+                                                       X1=FF_XX,
+                                                       X2=att_layer_QQ,
+                                                       mask=mask['qx'],
+                                                       scope='QX',
+                                                       comp_size=self.x_comp_size)),
+                                scope='norm_QX')
+            output_X = self._layer_normalization(
+                                tf.add(FF_XX,
+                                       self._attention_layer(
+                                                       X1=FF_QQ,
+                                                       X2=att_layer_XX,
+                                                       mask=mask['xq'],
+                                                       scope='XQ',
+                                                       comp_size=self.q_comp_size)),
+                                scope='norm_XQ')
+            return output_Q, output_X
+
     def _linear_sel(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
@@ -1242,7 +1297,12 @@ class Model(object):
         # Layers after computation of y1 to compute y2
         num_layers_post = config['model']['n_post_layer']
         switch = lambda i: (i%2 == 1) if config['model_options']['switching_model'] else lambda i: False
-        layer_func = self._one_layer_symmetric if config['model_options']['symmetric'] else self._one_layer
+        if config['model_options']['layer_type'] == 'symmetric':
+            layer_func = self._one_layer_symmetric
+        elif config['model_options']['layer_type']=='symmetric_small':
+            layer_func = self._one_layer_symmetric_small
+        elif config['model_options']['layer_type']=='original':
+            layer_func = self._one_layer
 
         # Computing following layers after encoder
         q = [self._layer_normalization(q_scaled, scope='norm_q_scaled')] if config['model_options']['encoder_normalization'] else [q_scaled]

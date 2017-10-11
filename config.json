@@ -103,7 +103,7 @@
 	},
 	"model_options":{
 		"norm_layer": false,
-        	"symmetric": true,
+		"layer_type": "symmetric",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":true,
