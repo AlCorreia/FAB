@@ -87,7 +87,9 @@ class Model(object):
 
         # Masks
         self.x_mask = tf.sign(self.x)
+        self.x_without_unk_mask = tf.sign(tf.nn.relu(self.x-1))
         self.q_mask = tf.sign(self.q)
+        self.q_without_unk_mask = tf.sign(tf.nn.relu(self.q-1))
 
         self.max_size_x = tf.shape(self.x)
         self.max_size_q = tf.shape(self.q)
@@ -1151,9 +1153,12 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
-
-            Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
-            Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
+            if self.config['model']['UNK=zero']:
+                Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_without_unk_mask, 2), tf.float32))
+                Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_without_unk_mask, 2), tf.float32))
+            else:
+                Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
+                Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
             if self.config['model']['word2vec_scaling']:
                 x_scaled = self._embed_scaling(Ax, inp_size=self.WEs, out_size=self.WEOs)
                 q_scaled = self._embed_scaling(Aq, inp_size=self.WEs, out_size=self.WEOs, second=True)
