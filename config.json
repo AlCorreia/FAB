@@ -91,6 +91,7 @@
 		"dropout_char_pre_conv":0.75,
 		"dropout_char_post_conv":1.0,
 		"dropout_word_passage":1.0,
+		"dropout_last_layer_passage":1.0,
 		"label_smoothing": 0.90,
 		"moving_encoder_regularization":false,
 		"xavier_initialization":true

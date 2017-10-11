@@ -45,6 +45,7 @@ class Model(object):
         self.keep_prob_char_pre = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_pre')
         self.keep_prob_char_post = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_post')
         self.keep_prob_word_passage = tf.placeholder_with_default(1.0, shape=(), name='dropout_word_passage')
+        self.keep_prob_last_x = tf.placeholder_with_default(1.0, shape=(), name='dropout_last_layer_passage')
 
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
@@ -235,6 +236,7 @@ class Model(object):
         feed_dict['dropout_char_pre:0'] = self.config['train']['dropout_char_pre_conv']
         feed_dict['dropout_char_post:0'] = self.config['train']['dropout_char_post_conv']
         feed_dict['dropout_word_passage:0'] = self.config['train']['dropout_word_passage']
+        feed_dict['dropout_last_layer_passage:0'] = self.config['train']['dropout_last_layer_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -1245,6 +1247,8 @@ class Model(object):
             q.append(q_i)
             x.append(x_i)
 
+        if self.config['train']['dropout_last_layer_passage']<1.0:
+            x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
         if config['model']['y1_sel'] == "single_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._single_conv(
                 X=x[-1],
