@@ -68,11 +68,12 @@ class Model(object):
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
-        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs] #size of x attention model/x processing size/size of q attention mode
+        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs] #size of x attention model/x processing size/size of q attention mode/multi-head size 
         self.q_reduction = config['model']['q_variables_reduction']
-        q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/self.MHs)*self.MHs)
+        q_MHs = int(config['model']['q_multi_head_size'])
+        q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/q_MHs)*q_MHs)
         q_FFHs = int(self.FFHs*self.q_reduction)
-        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs]#size of q attention model/q processing size/size of x attention model
+        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs, q_MHs]#size of q attention model/q processing size/size of x attention model
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
@@ -558,18 +559,18 @@ class Model(object):
             X1.set_shape([self.Bs, length_X1, self.WEAs])
 
             # Split Q, K, V for multi-head attention
-            Q = tf.split(Q, num_or_size_splits=self.MHs, axis=2)
-            K = tf.split(K, num_or_size_splits=self.MHs, axis=2)
-            V = tf.split(V, num_or_size_splits=self.MHs, axis=2)
+            Q = tf.split(Q, num_or_size_splits=comp_size[4], axis=2)
+            K = tf.split(K, num_or_size_splits=comp_size[4], axis=2)
+            V = tf.split(V, num_or_size_splits=comp_size[4], axis=2)
 
             if self.config['model']['max_out']:
                 Q = tf.expand_dims(tf.reduce_max(Q, axis=0), axis=0)
                 K = tf.expand_dims(tf.reduce_max(K, axis=0), axis=0)
                 V = tf.expand_dims(tf.reduce_max(V, axis=0), axis=0)
                 MHs = 1
-                WEPs = int(comp_size[1]/self.MHs)
+                WEPs = int(comp_size[1]/comp_size[4])
             else:
-                MHs = self.MHs
+                MHs = comp_size[4]
                 WEPs = comp_size[1]
             # Compute transpose of K for multiplyting Q*K^T
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
@@ -1530,7 +1531,7 @@ class Model(object):
                 max_size = max(seq_len)
             new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
             new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
-            return np.int_(new_seq), new_seq_y, max_size
+            return np.int_(new_seq), new_seq_y
 
         def padding_chars(seq, max_size_sentence, max_size=None):  # for padding a batch
             seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
@@ -1542,10 +1543,10 @@ class Model(object):
                     seq[i][j] = np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0)
                 seq[i] = np.concatenate([np.array(seq[i]), np.zeros([max_size_sentence-len(seq[i]), max_size])], axis=0)
             return np.int_(seq)
-
         # Convert every word to its respective id
-        words_dict = {}
-        word_size_counter = [0]*(self.config['pre']['max_word_size']+1)
+        if self.config['model']['char_embedding']:
+            words_dict = {}
+            word_size_counter = [0]*(self.config['pre']['max_word_size']+1)
         for i in batch_idxs:
             qi = list(map(
                 word2id,
@@ -1576,13 +1577,13 @@ class Model(object):
         self.answer = [y1, y2]
         # Padding
         if self.config['train']['check_available_memory']:
-            x, new_seq_y, max_size_x = padding(x,
+            x, new_seq_y = padding(x,
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
-            q, _, max_size_q = padding(q, max_size=self.config['pre']['max_question_size'])
+            q, _ = padding(q, max_size=self.config['pre']['max_question_size'])
         else:
-            x, new_seq_y, max_size_x = padding(x, label_smoothing=label_smoothing)
-            q, _, max_size_q = padding(q)
+            x, new_seq_y = padding(x, label_smoothing=label_smoothing)
+            q, _ = padding(q)
 
         if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
@@ -1611,10 +1612,10 @@ class Model(object):
             for i in range(len(batch_idxs)):
                 xc[i] = list(map(lambda y: mapping[y], xc[i]))
                 qc[i] = list(map(lambda y: mapping[y], qc[i]))
-            xc, _, _ = padding(xc)
-            qc, _, _ = padding(qc)
-            short_words_list, _, _ = padding(short_words_list)
-            long_words_list, _, _ = padding(long_words_list)
+            xc, _ = padding(xc)
+            qc, _ = padding(qc)
+            short_words_list, _ = padding(short_words_list)
+            long_words_list, _ = padding(long_words_list)
             feed_dict[self.xc] = xc
             feed_dict[self.qc] = qc
             feed_dict[self.short_words_char] = short_words_list
