@@ -45,6 +45,7 @@ class Model(object):
         self.keep_prob_char_pre = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_pre')
         self.keep_prob_char_post = tf.placeholder_with_default(1.0, shape=(), name='dropout_char_post')
         self.keep_prob_word_passage = tf.placeholder_with_default(1.0, shape=(), name='dropout_word_passage')
+        self.keep_prob_last_x = tf.placeholder_with_default(1.0, shape=(), name='dropout_last_layer_passage')
 
         # Learning rate with exponential decay
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decay_steps)
@@ -87,7 +88,9 @@ class Model(object):
 
         # Masks
         self.x_mask = tf.sign(self.x)
+        self.x_without_unk_mask = tf.sign(tf.nn.relu(self.x-1))
         self.q_mask = tf.sign(self.q)
+        self.q_without_unk_mask = tf.sign(tf.nn.relu(self.q-1))
 
         self.max_size_x = tf.shape(self.x)
         self.max_size_q = tf.shape(self.q)
@@ -236,6 +239,7 @@ class Model(object):
         feed_dict['dropout_char_pre:0'] = self.config['train']['dropout_char_pre_conv']
         feed_dict['dropout_char_post:0'] = self.config['train']['dropout_char_post_conv']
         feed_dict['dropout_word_passage:0'] = self.config['train']['dropout_word_passage']
+        feed_dict['dropout_last_layer_passage:0'] = self.config['train']['dropout_last_layer_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
@@ -809,6 +813,61 @@ class Model(object):
                             scope='norm_FF_X_out')
             return output_Q, output_X
 
+    def _one_layer_symmetric_small(self, Q, X, mask, scope, switch=False):  # Although switch input is not used here, it was added for compatibility with one layer function.
+        with tf.variable_scope(scope):
+            # Self-Atttention Layer Q
+            att_layer_QQ = self._layer_normalization(
+                                tf.add(Q,
+                                       self._attention_layer(
+                                                       X1=Q,
+                                                       mask=mask['qq'],
+                                                       scope='QQ',
+                                                       comp_size=self.q_comp_size)),
+                                scope='norm_QQ')
+            # FF neural network Q_Layer
+            FF_QQ = self._layer_normalization(
+                        tf.add(att_layer_QQ,
+                               self._FeedForward_NN(att_layer_QQ,
+                                                    'FF_QQ',
+                                                    comp_size=self.q_comp_size)),
+                        scope='norm_FF_QQ')
+            # Self-Atttention Layer X
+            att_layer_XX = self._layer_normalization(
+                                tf.add(X,
+                                       self._attention_layer(
+                                                       X1=X,
+                                                       mask=mask['xx'],
+                                                       scope='XX',
+                                                       comp_size=self.x_comp_size)),
+                                scope='norm_XX')
+            # FF neural network X_Layer
+            FF_XX = self._layer_normalization(
+                                tf.add(att_layer_XX,
+                                       self._FeedForward_NN(att_layer_XX,
+                                                            'FF_XX',
+                                                            comp_size=self.x_comp_size)),
+                                scope='norm_FF_XX')
+            # Cross attention of X and Q:
+            output_Q = self._layer_normalization(
+                                tf.add(FF_QQ,
+                                       self._attention_layer(
+                                                       X1=FF_XX,
+                                                       X2=att_layer_QQ,
+                                                       mask=mask['qx'],
+                                                       scope='QX',
+                                                       comp_size=self.x_comp_size)),
+                                scope='norm_QX')
+            output_X = self._layer_normalization(
+                                tf.add(FF_XX,
+                                       self._attention_layer(
+                                                       X1=FF_QQ,
+                                                       X2=att_layer_XX,
+                                                       mask=mask['xq'],
+                                                       scope='XQ',
+                                                       comp_size=self.q_comp_size)),
+                                scope='norm_XQ')
+            return output_Q, output_X
+
     def _linear_sel(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
@@ -1150,9 +1209,12 @@ class Model(object):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
                 Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [Bs,Qs,Hn]
 
-
-            Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
-            Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
+            if self.config['model']['UNK=zero']:
+                Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_without_unk_mask, 2), tf.float32))
+                Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_without_unk_mask, 2), tf.float32))
+            else:
+                Ax = tf.multiply(Ax,tf.cast(tf.expand_dims(self.x_mask, 2), tf.float32))
+                Aq = tf.multiply(Aq,tf.cast(tf.expand_dims(self.q_mask, 2), tf.float32))
             if self.config['model']['word2vec_scaling']:
                 x_scaled = self._embed_scaling(Ax, inp_size=self.WEs, out_size=self.WEOs)
                 q_scaled = self._embed_scaling(Aq, inp_size=self.WEs, out_size=self.WEOs, second=True)
@@ -1236,7 +1298,12 @@ class Model(object):
         # Layers after computation of y1 to compute y2
         num_layers_post = config['model']['n_post_layer']
         switch = lambda i: (i%2 == 1) if config['model_options']['switching_model'] else lambda i: False
-        layer_func = self._one_layer_symmetric if config['model_options']['symmetric'] else self._one_layer
+        if config['model_options']['layer_type'] == 'symmetric':
+            layer_func = self._one_layer_symmetric
+        elif config['model_options']['layer_type']=='symmetric_small':
+            layer_func = self._one_layer_symmetric_small
+        elif config['model_options']['layer_type']=='original':
+            layer_func = self._one_layer
 
         # Computing following layers after encoder
         q = [self._layer_normalization(q_scaled, scope='norm_q_scaled')] if config['model_options']['encoder_normalization'] else [q_scaled]
@@ -1246,6 +1313,8 @@ class Model(object):
             q.append(q_i)
             x.append(x_i)
 
+        if self.config['train']['dropout_last_layer_passage']<1.0:
+            x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
         if config['model']['y1_sel'] == "single_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._single_conv(
                 X=x[-1],
@@ -1434,20 +1503,20 @@ class Model(object):
             Defines the model's loss function.
         """
         # TODO: add collections if useful. Otherwise delete them.
-        ce_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-            logits=self.logits_y1, labels=self.y))
+        ce_loss = tf.nn.softmax_cross_entropy_with_logits(
+            logits=self.logits_y1, labels=self.y)
         # tf.add_to_collection('losses', ce_loss)
-        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y2_sel']=='direct2'):
-            self.ce_loss2 = -tf.reduce_mean(tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1))
+        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2'):
+            self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
-            self.ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                logits=self.logits_y2, labels=self.y2))
+            self.ce_loss2 = tf.nn.softmax_cross_entropy_with_logits(
+                logits=self.logits_y2, labels=self.y2)
         # tf.add_to_collection("losses", ce_loss2)
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
-        self.loss = tf.add_n([ce_loss, self.ce_loss2])
-        tf.summary.scalar('ce_loss', ce_loss)
-        tf.summary.scalar('ce_loss2', self.ce_loss2)
+        self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2]))
+        tf.summary.scalar('ce_loss', tf.reduce_mean(ce_loss))
+        tf.summary.scalar('ce_loss2', tf.reduce_mean(self.ce_loss2))
         tf.summary.scalar('loss', self.loss)
         # tf.add_to_collection('ema/scalar', self.loss)
 

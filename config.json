@@ -66,6 +66,7 @@
 		"highway_num_layers":2,
 		"q_variables_reduction":1.0,
 		"q_multi_head_size":4,
+		"UNK=zero":false,
         	"y1_sel":"double_conv",
         	"y2_sel":"direct2"
 	},
@@ -92,6 +93,7 @@
 		"dropout_char_pre_conv":0.75,
 		"dropout_char_post_conv":1.0,
 		"dropout_word_passage":1.0,
+		"dropout_last_layer_passage":1.0,
 		"label_smoothing": 0.90,
 		"moving_encoder_regularization":false,
 		"xavier_initialization":true
@@ -102,7 +104,7 @@
 	},
 	"model_options":{
 		"norm_layer": false,
-        	"symmetric": true,
+		"layer_type": "symmetric",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":true,
