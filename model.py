@@ -69,7 +69,7 @@ class Model(object):
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
-        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs] #size of x attention model/x processing size/size of q attention mode/multi-head size 
+        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs] #size of x attention model/x processing size/size of q attention mode/multi-head size
         self.q_reduction = config['model']['q_variables_reduction']
         q_MHs = int(config['model']['q_multi_head_size'])
         q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/q_MHs)*q_MHs)
@@ -868,6 +868,16 @@ class Model(object):
                                 scope='norm_XQ')
             return output_Q, output_X
 
+    def _one_layer_parallel(self, Q, X, mask, scope, switch=False):
+        # Defining masks and scopes
+        Q_left, X_left = self._one_layer(self, Q, X, mask, scope + '_left', switch=False)
+        Q_right, X_right = self._one_layer(self, Q, X, mask, scope + '_right', switch=False)
+
+        Q = tf.maximum(Q_left, Q_right)
+        X = tf.maximum(X_left, X_right)
+
+        return Q, X
+
     def _linear_sel(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
@@ -1277,7 +1287,7 @@ class Model(object):
                 else:
                     raise Exception("Highway_type not chosen in config.json. Set it to word, char or none")
 
-        #Dropout to zero a word2vec of a word
+        # Dropout to zero a word2vec of a word
         if self.config['train']['dropout_word_passage']<1.0:
             x_scaled = tf.multiply(x_scaled,tf.nn.dropout(tf.cast(
                                                    tf.expand_dims(self.x_mask, 2),
@@ -1304,6 +1314,8 @@ class Model(object):
             layer_func = self._one_layer_symmetric_small
         elif config['model_options']['layer_type']=='original':
             layer_func = self._one_layer
+        elif config['model_options']['layer_type']=='parallel':
+            layer_func = self._one_layer_parallel
 
         # Computing following layers after encoder
         q = [self._layer_normalization(q_scaled, scope='norm_q_scaled')] if config['model_options']['encoder_normalization'] else [q_scaled]
