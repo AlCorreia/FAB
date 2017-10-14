@@ -870,8 +870,8 @@ class Model(object):
 
     def _one_layer_parallel(self, Q, X, mask, scope, switch=False):
         # Defining masks and scopes
-        Q_left, X_left = self._one_layer(self, Q, X, mask, scope + '_left', switch)
-        Q_right, X_right = self._one_layer(self, Q, X, mask, scope + '_right', switch)
+        Q_left, X_left = self._one_layer(Q, X, mask, scope + '_left', switch)
+        Q_right, X_right = self._one_layer(Q, X, mask, scope + '_right', switch)
 
         Q = tf.maximum(Q_left, Q_right)
         X = tf.maximum(X_left, X_right)
