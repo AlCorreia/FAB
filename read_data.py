@@ -199,6 +199,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # if args.debug:
             #     break
     word2vec_dict = get_word2vec(config, word_counter)
+    char2vec_dict = {}
     if config['model']['pre_trained_char']:
         char2vec_dict = get_char2vec(config, char_counter)
 
