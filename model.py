@@ -731,8 +731,8 @@ class Model(object):
                                                        X2=att_layer_X2X2,
                                                        mask=mask[X2X1],
                                                        scope=X2X1,
-                                                       comp_size=X1_comp_size)),
-                                scope='norm_'+X2X1)
+                                                       comp_size=X2_comp_size)),
+                                scope='norm_'+X1X2)
 
             output_2 = FF_X2X2 = self._layer_normalization(
                                     tf.add(att_layer_X1X2,
