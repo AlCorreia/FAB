@@ -625,17 +625,15 @@ class Model(object):
                     keep_prob=self.keep_prob_attention)
         return x_final
 
-    def _layer_normalization(self, x, gain=1.0, scope=None):
+    def _layer_normalization(self, x, scope=None):
         with tf.variable_scope(scope):
             # Compute variance and means
-            mean, var = tf.nn.moments(x, axes=[-1])
-            var += 1e-6  # to avoid NaN, if variance = 0
-            normalized_x = tf.transpose(
-                                tf.multiply(
-                                    tf.add(mean,
-                                           tf.transpose(x, [2, 0, 1])),
-                                    tf.divide(gain, var)),
-                                [1, 2, 0])
+            mean_val = tf.reduce_mean(x, axis=[-1])
+            mean_val = tf.expand_dims(mean_val,axis=-1)
+            std_dev = tf.sqrt(tf.reduce_mean(tf.square(x-mean_val),axis=[-1]))
+            std_dev = tf.expand_dims(std_dev,axis=-1)
+            std_dev = std_dev + 1e-6  # to avoid NaN, if standard deviation = 0
+            normalized_x = tf.divide((x-mean_val),std_dev)
         # In Google Attention Model original code, there are these weights.
         # By now, they were turned off in FAB.
             if self.config['model_options']['norm_layer']:
