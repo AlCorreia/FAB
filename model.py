@@ -1323,7 +1323,7 @@ class Model(object):
         num_layers_pre = config['model']['n_pre_layer']
         # Layers after computation of y1 to compute y2
         num_layers_post = config['model']['n_post_layer']
-        switch = lambda i: (i%2 == 1) if config['model_options']['switching_model'] else lambda i: False
+        switch = (lambda i: (i%2 == 1)) if config['model_options']['switching_model'] else (lambda i: False)
         if config['model_options']['layer_type'] == 'symmetric':
             layer_func = self._one_layer_symmetric
         elif config['model_options']['layer_type']=='symmetric_small':
