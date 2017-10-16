@@ -384,6 +384,24 @@ class Model(object):
                                                 use_bias=self.config['model_options']['use_bias'],
                                                 reuse=True,
                                                 name="conv2d"))  # XW+B
+            elif self.config['model_options']['word2vec_scaling']=='nonlinear':
+                X = tf.expand_dims(X, 2)
+                X.set_shape([self.Bs, length_X, 1, inp_size])
+                X = tf.layers.conv2d(X,
+                                     filters=self.config['model']['FeedForward_Hidden_Size'],
+                                     kernel_size=1,
+                                     strides=1,
+                                     use_bias=self.config['model_options']['use_bias'],
+                                     reuse=second,
+                                     activation=tf.nn.relu,
+                                     name="conv2d_first")  # XW+B
+                X = tf.squeeze(tf.layers.conv2d(X,
+                                                filters=out_size,
+                                                kernel_size=1,
+                                                strides=1,
+                                                use_bias=self.config['model_options']['use_bias'],
+                                                reuse=second,
+                                     name="conv2d_second"))  # XW+B
             else: print("\n WORD2VEC SCALING NOT SELECTED\n")
         return X
 
