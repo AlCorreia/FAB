@@ -1638,11 +1638,12 @@ class Model(object):
             Defines the model's loss function.
         """
         # TODO: add collections if useful. Otherwise delete them.
-        ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
         # tf.add_to_collection('losses', ce_loss)
         if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2'):
+            ce_loss = -tf.reduce_sum(self.y_corrected*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
+            ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         # tf.add_to_collection("losses", ce_loss2)
 
