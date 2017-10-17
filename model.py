@@ -878,35 +878,54 @@ class Model(object):
 
     def _linear_sel(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
+        #length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            W = tf.get_variable('W',
-                                shape=[self.WEAs, 1],
-                                dtype=tf.float32)
-            summ = tf.summary.histogram('linear_sel', W)
-            summm = tf.summary.scalar('linear_sel_sparsity', tf.nn.zero_fraction(W))
-            logits = tf.reshape(
-                        tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
-                        [self.Bs, -1])  # [Bs, , 1]
+            length_X = X.get_shape()[1]
+            X = tf.expand_dims(X, 2)
+            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            #X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            logits = tf.layers.conv2d(X,
+                                      filters=1,
+                                      kernel_size=(1, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel')
+            logits = tf.reshape(logits, [self.Bs, -1])
+            X = tf.squeeze(X)
+            X.set_shape([self.Bs, length_X, self.WEAs])
             output = tf.nn.softmax(
-                        tf.multiply(logits,
+                        tf.add(logits,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
     def _linear_sel_y2(self, X, y1_sel, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
-            W = tf.get_variable('W',
-                                shape=[self.WEAs, 1],
-                                dtype=tf.float32)
+            length_X = X.get_shape()[1]
+            X = tf.expand_dims(X, 2)
+            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
-            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32)+mask['x']-1.0), tf.float32)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32) + mask['x']-1.0), tf.float32)
             self.y2_corrected = tf.multiply(self.y2, mask_new)
-            logits = tf.add(tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER),
-                        tf.reshape(
-                            tf.matmul(tf.reshape(X, [-1, self.WEAs]), W),
-                            [self.Bs, -1]))  # [Bs, , 1]
-            output = tf.nn.softmax(logits)
+
+            logits = tf.layers.conv2d(X,
+                                      filters=1,
+                                      kernel_size=(1, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel')
+            logits = tf.reshape(logits, [self.Bs, -1])
+            X = tf.squeeze(X)
+            X.set_shape([self.Bs, length_X, self.WEAs])
+            output = tf.nn.softmax(
+                        tf.add(logits,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
     def _conv_sel(self, X, mask, scope):
