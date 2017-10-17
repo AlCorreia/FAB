@@ -384,6 +384,24 @@ class Model(object):
                                                 use_bias=self.config['model_options']['use_bias'],
                                                 reuse=True,
                                                 name="conv2d"))  # XW+B
+            elif self.config['model_options']['word2vec_scaling']=='nonlinear':
+                X = tf.expand_dims(X, 2)
+                X.set_shape([self.Bs, length_X, 1, inp_size])
+                X = tf.layers.conv2d(X,
+                                     filters=self.config['model']['FeedForward_Hidden_Size'],
+                                     kernel_size=1,
+                                     strides=1,
+                                     use_bias=self.config['model_options']['use_bias'],
+                                     reuse=second,
+                                     activation=tf.nn.relu,
+                                     name="conv2d_first")  # XW+B
+                X = tf.squeeze(tf.layers.conv2d(X,
+                                                filters=out_size,
+                                                kernel_size=1,
+                                                strides=1,
+                                                use_bias=self.config['model_options']['use_bias'],
+                                                reuse=second,
+                                     name="conv2d_second"))  # XW+B
             else: print("\n WORD2VEC SCALING NOT SELECTED\n")
         return X
 
@@ -1040,6 +1058,65 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output1, logits1, output2, logits2
 
+    def _sym_double_conv(self, X, mask, scope):
+        """ Select one vector among n vectors by max(w*X) """
+        length_X = X.get_shape()[1]
+        with tf.variable_scope(scope):
+            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            logits = tf.layers.conv2d(X,
+                                      filters=32,
+                                      kernel_size=(9, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      activation=tf.nn.relu,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel')
+            logits = tf.nn.dropout(logits, keep_prob=self.keep_prob_selector)
+            logits = tf.layers.conv2d(logits,
+                                      filters=4,
+                                      kernel_size=(9, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel_2')
+
+            logits = tf.reshape(logits, [self.Bs, -1, 4])
+            l1_left, l2_left, l1_right, l2_right = tf.split(logits, num_or_size_splits=4, axis=2)
+            l1_left, l2_left = tf.reshape(l1_left, [self.Bs, -1]), tf.reshape(l2_left, [self.Bs, -1])
+            l1_right, l2_right = tf.reshape(l1_right, [self.Bs, -1]), tf.reshape(l2_right, [self.Bs, -1])
+
+            o1_left = tf.nn.softmax(
+                        tf.add(l1_left,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+            y1_left = tf.cast(tf.expand_dims(tf.argmax(o1_left, axis=1), 1), tf.int32)
+
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+
+            mask_new_left = tf.cast(tf.round(tf.cast(tf.less(y1_left-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            o2_left = tf.nn.softmax(
+                        tf.add(l2_left,
+                               tf.multiply(1.0 - mask_new_left, VERY_LOW_NUMBER)))
+
+            o2_right = tf.nn.softmax(
+                        tf.add(l2_right,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+            y2_right = tf.cast(tf.expand_dims(tf.argmax(o2_right, axis=1), 1), tf.int32)
+
+            mask_new_right = tf.cast(tf.round(tf.cast(tf.greater(y2_right-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            o1_right = tf.nn.softmax(
+                        tf.add(l2_right,
+                               tf.multiply(1.0 - mask_new_right, VERY_LOW_NUMBER)))
+
+            output1 = (o1_left + o1_right)/2
+            output2 = (o2_left + o2_right)/2
+
+            logits1 = (l1_left + l1_right)/2
+            logits2 = (l2_left + l2_right)/2
+
+        return output1, logits1, output2, logits2
+
     def _direct(self, X, mask, scope):
         with tf.variable_scope(scope):
             logits = tf.reshape(X, [self.Bs, -1, self.WEAs])
@@ -1324,7 +1401,7 @@ class Model(object):
         num_layers_pre = config['model']['n_pre_layer']
         # Layers after computation of y1 to compute y2
         num_layers_post = config['model']['n_post_layer']
-        switch = lambda i: (i%2 == 1) if config['model_options']['switching_model'] else lambda i: False
+        switch = (lambda i: (i%2 == 1)) if config['model_options']['switching_model'] else (lambda i: False)
         if config['model_options']['layer_type'] == 'symmetric':
             layer_func = self._one_layer_symmetric
         elif config['model_options']['layer_type']=='symmetric_small':
@@ -1351,6 +1428,11 @@ class Model(object):
                 scope='y1_y2_sel')
         elif config['model']['y1_sel'] == "double_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._double_conv(
+                X=x[-1],
+                mask=mask,
+                scope='y1_y2_sel')
+        elif config['model']['y1_sel'] == "sym_double_conv":
+            self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._sym_double_conv(
                 X=x[-1],
                 mask=mask,
                 scope='y1_y2_sel')
@@ -1532,14 +1614,12 @@ class Model(object):
             Defines the model's loss function.
         """
         # TODO: add collections if useful. Otherwise delete them.
-        ce_loss = tf.nn.softmax_cross_entropy_with_logits(
-            logits=self.logits_y1, labels=self.y)
+        ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
         # tf.add_to_collection('losses', ce_loss)
         if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2'):
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
-            self.ce_loss2 = tf.nn.softmax_cross_entropy_with_logits(
-                logits=self.logits_y2, labels=self.y2)
+            self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         # tf.add_to_collection("losses", ce_loss2)
 
         # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
