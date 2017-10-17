@@ -1701,15 +1701,42 @@ class Model(object):
             # if it was not found in any
             return 1  # unknown char
 
+        def gauss_kern(size, mean, smoothing):
+            """ Returns a normalized 1D gauss kernel array """
+            mean = mean[0]
+            x = np.mgrid[-mean:size-mean]
+            summ = np.sum(np.exp(-(x**2)))
+            g = np.exp(-x**2)
+            g[mean] = 0
+            g = g / (g.sum()/(1-smoothing))
+            g[mean] = smoothing
+            return g
+
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
-        def padding(seq, label_smoothing=1.0, max_size=None):  # for padding a batch
+        def padding(seq, max_size=None):  # for padding a batch
             seq_len = [len(seq[i]) for i in range(len(seq))]
             if max_size is None:
                 max_size = max(seq_len)
             new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
-            new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
-            return np.int_(new_seq), new_seq_y
+            return np.int_(new_seq)
+
+        def padding_answer(seq, y1, y2, label_smoothing, max_size=None):
+            seq_len = [len(seq[i]) for i in range(len(seq))]
+            if max_size is None:
+                max_size = max(seq_len)
+            new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+            if self.config['train']['gaussian_smoothing']:
+                y1_new = [np.concatenate([gauss_kern(size=seq_len[i], mean=y1[i], smoothing=label_smoothing), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+                y2_new = [np.concatenate([gauss_kern(size=seq_len[i], mean=y2[i], smoothing=label_smoothing), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+            else:
+                new_seq_y = [np.concatenate([np.ones(seq_len[i])*(1.0-label_smoothing)/seq_len[i], np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+                y1_new = new_seq_y
+                y2_new = np.copy(new_seq_y)
+                for i in range(self.Bs):
+                    y1_new[i][y1[i]] += label_smoothing
+                    y2_new[i][y2[i]] += label_smoothing
+            return np.int_(new_seq), y1_new, y2_new
 
         def padding_chars(seq, max_size_sentence, max_size=None):  # for padding a batch
             seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
@@ -1755,13 +1782,13 @@ class Model(object):
         self.answer = [y1, y2]
         # Padding
         if self.config['train']['check_available_memory']:
-            x, new_seq_y = padding(x,
+            x, y1_new, y2_new = padding_answer(x, y1, y2,
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
-            q, _ = padding(q, max_size=self.config['pre']['max_question_size'])
+            q = padding(q, max_size=self.config['pre']['max_question_size'])
         else:
-            x, new_seq_y = padding(x, label_smoothing=label_smoothing)
-            q, _ = padding(q)
+            x, y1_new, y2_new = padding_answer(x, y1, y2, label_smoothing=label_smoothing)
+            q = padding(q)
 
         if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
@@ -1790,20 +1817,16 @@ class Model(object):
             for i in range(len(batch_idxs)):
                 xc[i] = list(map(lambda y: mapping[y], xc[i]))
                 qc[i] = list(map(lambda y: mapping[y], qc[i]))
-            xc, _ = padding(xc)
-            qc, _ = padding(qc)
-            short_words_list, _ = padding(short_words_list)
-            long_words_list, _ = padding(long_words_list)
+            xc = padding(xc)
+            qc = padding(qc)
+            short_words_list = padding(short_words_list)
+            long_words_list = padding(long_words_list)
             feed_dict[self.xc] = xc
             feed_dict[self.qc] = qc
             feed_dict[self.short_words_char] = short_words_list
             feed_dict[self.long_words_char] = long_words_list
             #pdb.set_trace()
-        y1_new = new_seq_y
-        y2_new = np.copy(new_seq_y)
-        for i in range(self.Bs):
-            y1_new[i][y1[i]] += label_smoothing
-            y2_new[i][y2[i]] += label_smoothing
+
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
