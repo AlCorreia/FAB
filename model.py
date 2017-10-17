@@ -1083,7 +1083,7 @@ class Model(object):
             o2_right = tf.nn.softmax(
                         tf.add(l2_right,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-            y2_right = tf.cast(tf.expand_dims(tf.argmax(o2_left, axis=1), 1), tf.int32)
+            y2_right = tf.cast(tf.expand_dims(tf.argmax(o2_right, axis=1), 1), tf.int32)
 
             mask_new_right = tf.cast(tf.round(tf.cast(tf.less(y2_right-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
             o1_right = tf.nn.softmax(
