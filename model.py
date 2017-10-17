@@ -1046,16 +1046,8 @@ class Model(object):
             logits = tf.reshape(logits, [self.Bs, -1, 2])
             logits1, logits2 = tf.split(logits, 2, 2)
             logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
-            output1 = tf.nn.softmax(
-                        tf.add(logits1,
-                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-            y1_selected = tf.cast(tf.expand_dims(tf.argmax(output1, axis=1), 1), tf.int32)
-            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
-            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
-            self.y2_corrected = tf.multiply(self.y2, mask_new)
-            output2 = tf.nn.softmax(
-                        tf.add(logits2,
-                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+            output1, output2 = self._process_logits(logits1, logits2, mask)
+
         return output1, logits1, output2, logits2
 
     def _sym_double_conv(self, X, mask, scope):
@@ -1104,7 +1096,7 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
             y2_right = tf.cast(tf.expand_dims(tf.argmax(o2_right, axis=1), 1), tf.int32)
 
-            mask_new_right = tf.cast(tf.round(tf.cast(tf.greater(y2_right-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            mask_new_right = tf.cast(tf.round(tf.cast(tf.greater(y2_right+1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
             o1_right = tf.nn.softmax(
                         tf.add(l2_right,
                                tf.multiply(1.0 - mask_new_right, VERY_LOW_NUMBER)))
@@ -1138,6 +1130,38 @@ class Model(object):
                         tf.add(logits,
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
+
+    def _process_logits(self, logits1, logits2, mask):
+        def f1():
+            output1 = tf.nn.softmax(
+                        tf.add(logits1,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+            y1_selected = tf.cast(tf.expand_dims(tf.argmax(output1, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            output2 = tf.nn.softmax(
+                        tf.add(logits2,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+            self.y_corrected = self.y
+            self.y2_corrected = tf.multiply(self.y2, mask_new)
+            return output1, output2
+
+        def f2():
+            output2 = tf.nn.softmax(
+                        tf.add(logits2,
+                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
+            y2_selected = tf.cast(tf.expand_dims(tf.argmax(output2, axis=1),1), tf.int32)
+            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
+            mask_new = tf.cast(tf.round(tf.cast(tf.greater(y2_selected+1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
+            self.y_corrected = tf.multiply(self.y, mask_new)
+            output1 = tf.nn.softmax(
+                        tf.add(logits1,
+                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
+            self.y_corrected = tf.multiply(self.y, mask_new)
+            self.y2_corrected = self.y2
+            return output1, output2
+
+        return tf.cond(tf.equal(tf.floormod(self.global_step, 2), 0), f1, f2)
 
     def _split_layer_sel(self, Q, X, mask, scope):
         """ Compute a self_attention, cross_attention
