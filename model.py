@@ -433,7 +433,7 @@ class Model(object):
             output_highway = tf.squeeze(input_layer)
         return output_highway
 
-    def _encoder(self, X, Q):
+    def _encoder(self, X, Q, input_size):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
@@ -453,8 +453,9 @@ class Model(object):
             high_frequency = self.config['model']['encoder_high_freq']
             # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
             pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
+            pos = pos + self.config['model']['encoder_initial_step'] #To change initial step
             # Create a vector with all the exponents
-            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range((self.WEOs+self.COs)/2), (self.WEOs+self.COs)/2-1))
+            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range((input_size)/2), (input_size)/2-1))
             # Power the base frequency by exponents
             freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
             if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
@@ -482,9 +483,11 @@ class Model(object):
 
             # Concatenate both values
             encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
-
+            if self.config['model']['encoder_scaling']:
+                w = tf.get_variable('weight_encoder', shape =[1], dtype=tf.float32, initializer=tf.ones_initializer())
+                encoder = w*encoder
             # Computes the encoder values for x and q
-            encoder_x = tf.slice(encoder, [0, 0], [size_x, self.WEOs+self.COs])
+            encoder_x = tf.slice(encoder, [0, 0], [size_x, input_size])
 
             if self.config['model']['encoder_no_cross']:
                 # If no cross attention between encoders is desired
@@ -500,10 +503,10 @@ class Model(object):
                 encoder_q =  tf.slice(
                                         tf.concat([encoder_sin_q,encoder_cos_q], axis=1),
                                         [0, 0],
-                                        [size_q, self.WEOs+self.COs])
+                                        [size_q, input_size])
             else:
                 # If encoder in x and q are the same
-                encoder_q = tf.slice(encoder,[0,0],[size_q,self.WEOs+self.COs])
+                encoder_q = tf.slice(encoder,[0,0],[size_q,input_size])
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -1143,8 +1146,10 @@ class Model(object):
             mask1 = tf.cast(tf.round(tf.cast(tf.greater(y2_selected+1, range_x), tf.float32) + mask['x']-1.0), tf.float32)
             mask2 = tf.cast(mask['x'], tf.float32)
             return mask1, mask2
-
-        mask1, mask2 = tf.cond(tf.equal(tf.floormod(self.global_step, 2), 0), f1, f2)
+        if self.config['model']['alternating_y1_y2']:
+            mask1, mask2 = tf.cond(tf.equal(tf.floormod(self.global_step, 2), 0), f1, f2)
+        else:
+            mask1, mask2 = f1()
         output1 = tf.nn.softmax(
                     tf.add(logits1,
                            tf.multiply(1.0 - mask1, VERY_LOW_NUMBER)))
@@ -1406,7 +1411,19 @@ class Model(object):
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
-                x_scaled, q_scaled = self._encoder(x_scaled, q_scaled)
+                if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
+                    #An encoder for char and word are defined separetely
+                    x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis = 2)
+                    q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis = 2)
+                    with tf.variable_scope("encode_word"):
+                        x_word, q_word = self._encoder(x_word, q_word, self.WEOs)
+                    with tf.variable_scope("encode_char"):
+                        x_char, q_char = self._encoder(x_char, q_char, self.COs)
+                    x_scaled = tf.concat([x_word,x_char],axis=2)
+                    q_scaled = tf.concat([q_word,q_char],axis=2)
+                else:  #An encoder for char and word are defined together
+                    x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEOs+self.COs)
+
 
         if self.WEAs != (self.WEOs+self.COs):
             x_scaled = self._reduce_dimension(x_scaled)
