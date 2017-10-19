@@ -537,7 +537,8 @@ class Model(object):
                                             reuse=True,
                                             name="conv2d"))  # XW
         return X
-    def _attention_layer(self, X1, mask, X2=None, scope=None, comp_size=None):
+
+    def _attention_layer(self, X1, mask, X2=None, X3=None, scope=None, comp_size=None):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         with tf.variable_scope(scope):
             length_X1 = X1.get_shape()[1]
@@ -557,7 +558,7 @@ class Model(object):
                     QKV,
                     num_or_size_splits=[comp_size[1], comp_size[1], comp_size[1]],
                     axis=2)
-            else:
+            elif X3 is None:
                 # (CROSS ATTENTION)
                 # If X2 is not none, compute Q = X1*WQ, K = X2*WK, V=X1*WV
                 length_X2 = X2.get_shape()[1]
@@ -580,6 +581,40 @@ class Model(object):
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
+            else:
+                # (CROSS ATTENTION)
+                # If X2 and X3 are not none, compute Q = X1*WQ, K = X2*WK, V=X3*WV
+                #X2 Processing
+                length_X2 = X2.get_shape()[1]
+                X2 = tf.expand_dims(X2, 2)
+                X2.set_shape([self.Bs, length_X2, 1, comp_size[2]])
+                Q = tf.squeeze(tf.layers.conv2d(X2,
+                                                filters=comp_size[1],
+                                                kernel_size=1,
+                                                strides=1,
+                                                kernel_initializer=self.initializer,
+                                                name='Q_Comp'))
+                X2 = tf.squeeze(X2)
+                X2.set_shape([self.Bs, length_X2, comp_size[2]])
+                #X1 Processing
+                K = tf.squeeze(tf.layers.conv2d(X1,
+                                                 filters=comp_size[1],
+                                                 kernel_size=1,
+                                                 strides=1,
+                                                 kernel_initializer=self.initializer,
+                                                 name='V_Comp'))
+                #X3 Processing
+                length_X3 = X3.get_shape()[1]
+                X3 = tf.expand_dims(X3, 2)
+                X3.set_shape([self.Bs, length_X3, 1, comp_size[2]])
+                V = tf.squeeze(tf.layers.conv2d(X3,
+                                                 filters=comp_size[1],
+                                                 kernel_size=1,
+                                                 strides=1,
+                                                 kernel_initializer=self.initializer,
+                                                 name='K_Comp'))
+                X3 = tf.squeeze(X3)
+                X3.set_shape([self.Bs, length_X3, comp_size[2]])
             X1 = tf.squeeze(X1)
             X1.set_shape([self.Bs, length_X1, self.WEAs])
 
@@ -598,19 +633,20 @@ class Model(object):
                 MHs = comp_size[4]
                 WEPs = comp_size[1]
             # Compute transpose of K for multiplyting Q*K^T
+            Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4],tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
             if self.config['train']['dropout_attention_pre_softmax'] < 1.0: #This is done to save memory if dropout is not used
                 softmax = tf.nn.softmax(
                     tf.add(
-                        tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                        tf.divide(logits, Scaling),
                         tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=self.keep_prob_attention_pre_softmax), VERY_LOW_NUMBER)),
                     dim=-1)
             else:
                 softmax = tf.nn.softmax(
                     tf.add(
-                        tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
+                        tf.divide(logits, Scaling),
                         tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
                     dim=-1)
             # Final mask is applied
@@ -1413,14 +1449,14 @@ class Model(object):
             with tf.variable_scope("Encoding"):
                 if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                     #An encoder for char and word are defined separetely
-                    x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis = 2)
-                    q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis = 2)
+                    x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
+                    q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis=2)
                     with tf.variable_scope("encode_word"):
-                        x_word, q_word = self._encoder(x_word, q_word, self.WEOs)
+                        x_word_enc, q_word_enc = self._encoder(x_word, q_word, self.WEOs)
                     with tf.variable_scope("encode_char"):
-                        x_char, q_char = self._encoder(x_char, q_char, self.COs)
-                    x_scaled = tf.concat([x_word,x_char],axis=2)
-                    q_scaled = tf.concat([q_word,q_char],axis=2)
+                        x_char_enc, q_char_enc = self._encoder(x_char, q_char, self.COs)
+                    x_scaled = tf.concat([x_word_enc,x_char_enc], axis=2)
+                    q_scaled = tf.concat([q_word_enc,q_char_enc], axis=2)
                 else:  #An encoder for char and word are defined together
                     x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEOs+self.COs)
 
@@ -1428,6 +1464,7 @@ class Model(object):
         if self.WEAs != (self.WEOs+self.COs):
             x_scaled = self._reduce_dimension(x_scaled)
             q_scaled = self._reduce_dimension(q_scaled, second=True)
+
 
         # Defining functions according to config.json
         # They are used later in the final model
