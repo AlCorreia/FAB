@@ -555,6 +555,7 @@ class Model(object):
                                                   kernel_size=1,
                                                   strides=1,
                                                   kernel_initializer=self.initializer,
+                                                  use_bias=self.config['model_options']['use_bias'],
                                                   name='QKV_Comp'))
                 Q, K, V = tf.split(
                     QKV,
@@ -569,6 +570,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
+                                                 use_bias=self.config['model_options']['use_bias'],
                                                  name='KV_Comp'))
                 K, V = tf.split(KV,
                                 num_or_size_splits=[comp_size[1], comp_size[1]],
@@ -580,6 +582,7 @@ class Model(object):
                                                 kernel_size=1,
                                                 strides=1,
                                                 kernel_initializer=self.initializer,
+                                                use_bias=self.config['model_options']['use_bias'],
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
@@ -595,6 +598,7 @@ class Model(object):
                                                 kernel_size=1,
                                                 strides=1,
                                                 kernel_initializer=self.initializer,
+                                                use_bias=self.config['model_options']['use_bias'],
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
@@ -604,6 +608,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
+                                                 use_bias=self.config['model_options']['use_bias'],
                                                  name='K_Comp'))
                 #X3 Processing
                 length_X3 = X3.get_shape()[1]
@@ -614,6 +619,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
+                                                 use_bias=self.config['model_options']['use_bias'],
                                                  name='V_Comp'))
                 X3 = tf.squeeze(X3)
                 X3.set_shape([self.Bs, length_X3, comp_size[2]])
