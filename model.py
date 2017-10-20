@@ -321,8 +321,9 @@ class Model(object):
                                               filters=self.COs,
                                               kernel_size=[1,self.config['model']['char_convolution_size']],
                                               strides=[1, 1],
-                                              padding='same',
+                                              padding='valid',
                                               activation=tf.tanh)
+        mask = tf.slice(mask, [0,0,0],[Ac_size[0],Ac_size[1]-self.config['model']['char_convolution_size']+1, 1]) #Mask must be updated because of valid
         A_word_convolution_masked = tf.squeeze(A_word_convolution,1)+tf.cast(1-mask,tf.float32)*(VERY_LOW_NUMBER)#To ignore padding vectors in reduce_max
         char_embedded_word = tf.reduce_max(A_word_convolution_masked, axis=1)  # Reduce all info to a vector
         if self.config['train']['dropout_char_post_conv']<1.0:
@@ -1989,11 +1990,13 @@ class Model(object):
             short_words_list = []
             index = -1
             size_short = 0
+            convolution_size = self.config['model']['char_convolution_size']
             while (computational_cost>computational_cost_new): # Find optimal threshold for short and long words
                 index = index + 1
                 size_short = size_short+word_size_counter[index]
                 computational_cost = computational_cost_new
-                computational_cost_new = (index+1)*(size_short)+longest_word_size*(number_of_words-size_short)
+                computational_cost_new = max(1,1+(index+1)-convolution_size)*(size_short)+(longest_word_size-convolution_size+1)*(number_of_words-size_short)
+            index=max(index,convolution_size)
             short_words_list.append([0])  # index 0 is null word
             for i in range(number_of_words):
                 mapping[ordered_words[i][1][0]]=i+1
