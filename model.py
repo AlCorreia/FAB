@@ -517,26 +517,27 @@ class Model(object):
         return x_encoded, q_encoded
 
 
-    def _reduce_dimension(self, X, second=False):
-        length_X = X.get_shape()[1]  # number of words in the passage
-        with tf.variable_scope('reduce_dimension', reuse=second) as scope:
-            with tf.variable_scope('conv2d', reuse=second):
-                # If the scaling matrix was previously trained
-                # In order to be orthonormal
-                weigths = tf.get_variable(
-                            'kernel',
-                            shape=[1, 1, self.WEOs+self.COs, self.WEAs],
-                            initializer=self.initializer)
-            X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEOs+self.COs])
-            X = tf.squeeze(tf.layers.conv2d(X,
-                                            filters=self.WEAs,
-                                            kernel_size=1,
-                                            strides=1,
-                                            use_bias=False,
-                                            reuse=True,
-                                            name="conv2d"))  # XW
-        return X
+     #to be deleted
+    # def _reduce_dimension(self, X, second=False):
+    #    length_X = X.get_shape()[1]  # number of words in the passage
+    #    with tf.variable_scope('reduce_dimension', reuse=second) as scope:
+    #        with tf.variable_scope('conv2d', reuse=second):
+    #            # If the scaling matrix was previously trained
+    #           # In order to be orthonormal
+    #            weigths = tf.get_variable(
+    #                        'kernel',
+    #                        shape=[1, 1, self.WEOs+self.COs, self.WEAs],
+    #                        initializer=self.initializer)
+    #        X = tf.expand_dims(X, 2)
+    #        X.set_shape([self.Bs, length_X, 1, self.WEOs+self.COs])
+    #        X = tf.squeeze(tf.layers.conv2d(X,
+    #                                        filters=self.WEAs,
+    #                                        kernel_size=1,
+    #                                        strides=1,
+    #                                        use_bias=False,
+    #                                        reuse=True,
+    #                                        name="conv2d"))  # XW
+    #    return X
 
     def _attention_layer(self, X1, mask, X2=None, X3=None, scope=None, comp_size=None):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
@@ -602,7 +603,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
-                                                 name='V_Comp'))
+                                                 name='K_Comp'))
                 #X3 Processing
                 length_X3 = X3.get_shape()[1]
                 X3 = tf.expand_dims(X3, 2)
@@ -612,7 +613,7 @@ class Model(object):
                                                  kernel_size=1,
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
-                                                 name='K_Comp'))
+                                                 name='V_Comp'))
                 X3 = tf.squeeze(X3)
                 X3.set_shape([self.Bs, length_X3, comp_size[2]])
             X1 = tf.squeeze(X1)
@@ -682,24 +683,26 @@ class Model(object):
                     keep_prob=self.keep_prob_attention)
         return x_final
 
-    def _layer_normalization(self, x, scope=None):
+    def _layer_normalization(self, x, scope=None, shape=None):
+        if shape is None:
+            shape = self.WEAs
         with tf.variable_scope(scope):
             # Compute variance and means
             mean_val = tf.reduce_mean(x, axis=[-1])
             mean_val = tf.expand_dims(mean_val,axis=-1)
-            std_dev = tf.sqrt(tf.reduce_mean(tf.square(x-mean_val),axis=[-1]))
+            variance = 1e-8 + tf.reduce_mean(tf.square(x-mean_val),axis=[-1]) #1e-8 to avoid NaN
+            std_dev = tf.sqrt(variance)
             std_dev = tf.expand_dims(std_dev,axis=-1)
-            std_dev = std_dev + 1e-6  # to avoid NaN, if standard deviation = 0
             normalized_x = tf.divide((x-mean_val),std_dev)
         # In Google Attention Model original code, there are these weights.
         # By now, they were turned off in FAB.
             if self.config['model_options']['norm_layer']:
                 W_Scale = tf.get_variable('weight',
-                                          shape=[self.WEAs],
+                                          shape=[shape],
                                           dtype=tf.float32,
                                           initializer=tf.ones_initializer())
                 b_Scale = tf.get_variable('bias',
-                                          shape=[self.WEAs],
+                                          shape=[shape],
                                           dtype=tf.float32,
                                           initializer=tf.zeros_initializer())
                 normalized_x = normalized_x * W_Scale + b_Scale
@@ -740,6 +743,110 @@ class Model(object):
                     output,
                     keep_prob=self.keep_prob_FF)
         return output
+
+    def _one_layer_reduction(self, Q, X, mask, scope, out_size, Q_Cs, X_Cs, switch=False):
+        # Defining masks and scopes
+        if switch:
+            X1 = X
+            X1_comp_size = X_Cs
+            X2 = Q
+            X2_comp_size = Q_Cs
+            X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq'
+        else:
+            X1 = Q
+            X1_comp_size = Q_Cs
+            X2 = X
+            X2_comp_size = X_Cs
+            X1X1, X2X2, X2X1, X1X2 = 'qq', 'xx', 'xq', 'qx'
+        with tf.variable_scope(scope):
+            if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
+                #An encoder for char and word are defined separetely
+                X1_word, X1_char = tf.split(X1, [self.WEOs, self.COs], axis=2)
+                X2_word, X2_char = tf.split(X2, [self.WEOs, self.COs], axis=2)
+                with tf.variable_scope("encode_word"):
+                    X1_word_enc, X2_word_enc = self._encoder(X1_word, X2_word, self.WEOs)
+                with tf.variable_scope("encode_char"):
+                    X1_char_enc, X2_char_enc = self._encoder(X1_char, X2_char, self.COs)
+                X1_enc = tf.concat([X1_word_enc, X1_char_enc], axis=2)
+                X2_enc = tf.concat([X2_word_enc, X2_char_enc], axis=2)
+            else: #same encoder for both
+                X1_enc, X2_enc = self._encoder(X1, X2, self.WEOs+self.COs)
+            att_layer_X1X1 = self._layer_normalization(
+                                tf.add(X1,
+                                       self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1,
+                                                       mask=mask[X1X1],
+                                                       scope=X1X1,
+                                                       comp_size=X1_comp_size)),
+                                scope='norm_'+X1X1,
+                                shape=X1_comp_size[0])
+
+            FF_X1X1 = self._layer_normalization(
+                                    tf.add(att_layer_X1X1,
+                                           self._FeedForward_NN(att_layer_X1X1,
+                                                          'FF' + X1X1,
+                                                           comp_size=X1_comp_size)),
+                                    scope='norm_FF_'+X1X1,
+                                    shape=X1_comp_size[0])
+
+            att_layer_X2X2 = self._layer_normalization(
+                                tf.add(X2,
+                                       self._attention_layer(X1=X2_enc, X2=X2_enc, X3=X2,
+                                                       mask=mask[X2X2],
+                                                       scope=X2X2,
+                                                       comp_size=X2_comp_size)),
+                                scope='norm_' + X2X2,
+                                shape=X2_comp_size[0])
+
+            att_layer_X1X2 = self._layer_normalization(
+                                tf.add(att_layer_X2X2,
+                                       self._attention_layer(
+                                                       X1=FF_X1X1,
+                                                       X2=att_layer_X2X2,
+                                                       mask=mask[X2X1],
+                                                       scope=X2X1,
+                                                       comp_size=X2_comp_size)),
+                                scope='norm_'+X1X2,
+                                shape=X2_comp_size[0])
+
+            FF_X2X2 = self._layer_normalization(
+                                    tf.add(att_layer_X1X2,
+                                           self._FeedForward_NN(att_layer_X1X2,
+                                                                'FF_' + X2X2,
+                                                                comp_size=X2_comp_size)),
+                                    scope='norm_FF_' + X2X2,
+                                    shape=X2_comp_size[0])
+
+            length_X1 = X1.get_shape()[1]
+            length_X2 = X2.get_shape()[1]
+            FF_X1X1 = tf.expand_dims(FF_X1X1, 1)
+            FF_X2X2 = tf.expand_dims(FF_X2X2, 1)
+            FF_X1X1.set_shape([self.Bs, 1, length_X1, X1_comp_size[0]])
+            FF_X2X2.set_shape([self.Bs, 1, length_X2, X2_comp_size[0]])
+            output_1 = tf.layers.conv2d(FF_X1X1,
+                                        filters=out_size,
+                                        kernel_size=1,
+                                        strides=1,
+                                        use_bias=True,
+                                        activation=None,
+                                        kernel_initializer=self.initializer,
+                                        name='affine_op_X1')
+
+            output_2 = tf.layers.conv2d(FF_X2X2,
+                                        filters=out_size,
+                                        kernel_size=1,
+                                        strides=1,
+                                        use_bias=True,
+                                        activation=None,
+                                        kernel_initializer=self.initializer,
+                                        name='affine_op_X2')
+            output_1 = tf.squeeze(output_1, 1)
+            output_2 = tf.squeeze(output_2, 1)
+            output_1.set_shape([self.Bs, length_X1, out_size])
+            output_2.set_shape([self.Bs, length_X2, out_size])
+            if switch:
+                return output_2, output_1
+            else:
+                return output_1, output_2
 
     def _one_layer(self, Q, X, mask, scope, switch=False):
         # Defining masks and scopes
@@ -1444,6 +1551,14 @@ class Model(object):
             x_scaled = tf.multiply(x_scaled,tf.nn.dropout(tf.cast(
                                                    tf.expand_dims(self.x_mask, 2),
                                                    tf.float32),keep_prob=self.keep_prob_word_passage))
+
+        if self.config['model']['one_layer_reduction']:
+            WEAs_reduct = self.WEOs+self.COs
+            FFHs_reduct = WEAs_reduct*2
+            Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs]#size of q attention model/q processing size/size of x attention model
+            X_Cs = Q_Cs
+            q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs)
+
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
@@ -1458,13 +1573,12 @@ class Model(object):
                     x_scaled = tf.concat([x_word_enc,x_char_enc], axis=2)
                     q_scaled = tf.concat([q_word_enc,q_char_enc], axis=2)
                 else:  #An encoder for char and word are defined together
-                    x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEOs+self.COs)
+                    x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEAs)
 
-
-        if self.WEAs != (self.WEOs+self.COs):
-            x_scaled = self._reduce_dimension(x_scaled)
-            q_scaled = self._reduce_dimension(q_scaled, second=True)
-
+        #TO BE DELETED
+        #if self.WEAs != (self.WEOs+self.COs):
+        #    x_scaled = self._reduce_dimension(x_scaled)
+        #    q_scaled = self._reduce_dimension(q_scaled, second=True)
 
         # Defining functions according to config.json
         # They are used later in the final model
@@ -1482,9 +1596,10 @@ class Model(object):
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
 
+
         # Computing following layers after encoder
-        q = [self._layer_normalization(q_scaled, scope='norm_q_scaled')] if config['model_options']['encoder_normalization'] else [q_scaled]
-        x = [self._layer_normalization(x_scaled, scope='norm_x_scaled')] if config['model_options']['encoder_normalization'] else [x_scaled]
+        q = [q_scaled]
+        x = [x_scaled]
         for i in range(num_layers_pre+num_layers_post):
             q_i, x_i = layer_func(q[i], x[i], mask, 'layer_'+str(i), switch=switch(i))
             q.append(q_i)
