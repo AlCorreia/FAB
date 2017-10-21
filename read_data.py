@@ -360,14 +360,18 @@ def update_config(config, data_set):
     return config
 
 
-def get_batch_idxs(config, data_set):
+def get_batch_idxs(config, data_set, total_sort=False):
     valid_idxs_groups = data_set['valid_idxs_grouped']
-    # Compute number of subgroups (separated by paragraph sizes)
-    nGroups = len(valid_idxs_groups)
-    # Choose randomly subgroup of questions (separated by paragraph sizes)
-    group_choice = randint(0, nGroups-1)
-    valid_idxs = valid_idxs_groups[group_choice]
-    # Compute number of questions in subgroup
+    if total_sort:
+        # Join all groups
+        valid_idxs = [idxs for valid_idxs_group in valid_idxs_groups for idxs in valid_idxs_group]
+    else:
+        # Compute number of subgroups (separated by paragraph sizes)
+        nGroups = len(valid_idxs_groups)
+        # Choose randomly subgroup of questions (separated by paragraph sizes)
+        group_choice = randint(0, nGroups-1)
+        valid_idxs = valid_idxs_groups[group_choice]
+    # Compute number of questions
     nQuestions = len(valid_idxs)
     n = 0
     batch_idxs = set()
