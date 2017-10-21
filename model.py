@@ -540,7 +540,7 @@ class Model(object):
     #                                        name="conv2d"))  # XW
     #    return X
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, scope=None, comp_size=None):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         with tf.variable_scope(scope):
             length_X1 = X1.get_shape()[1]
@@ -626,6 +626,22 @@ class Model(object):
             X1 = tf.squeeze(X1)
             X1.set_shape([self.Bs, length_X1, self.WEAs])
 
+            if X4 is not None:
+                #X3 Processing
+                length_X4 = X4.get_shape()[1]
+                X4 = tf.expand_dims(X4, 2)
+                X4.set_shape([self.Bs, length_X4, 1, comp_size[5]])
+                V_X4 = tf.squeeze(tf.layers.conv2d(X4,
+                                                 filters=comp_size[5],
+                                                 kernel_size=1,
+                                                 strides=1,
+                                                 kernel_initializer=self.initializer,
+                                                 use_bias=self.config['model_options']['use_bias'],
+                                                 name='V4_Comp'))
+                X4 = tf.squeeze(X4)
+                X4.set_shape([self.Bs, length_X4, comp_size[2]])
+                V_X4 = tf.split(V_X4, num_or_size_splits=comp_size[4], axis=2)
+
             # Split Q, K, V for multi-head attention
             Q = tf.split(Q, num_or_size_splits=comp_size[4], axis=2)
             K = tf.split(K, num_or_size_splits=comp_size[4], axis=2)
@@ -683,12 +699,35 @@ class Model(object):
                                  kernel_size=1,
                                  strides=1,
                                  name='Att_Comp'))
+
+            #X4 processing
+            if X4 is not None:
+                X4_attention = tf.matmul(softmax, V_X4)  # softmax(Q*K^T)*V
+            # Concatenate everything together
+                X4_attention_concat = tf.concat(
+                tf.unstack(X4_attention,
+                           axis=0,
+                           num=MHs),
+                axis=2)
+                X4_attention_concat.set_shape([self.Bs, length_X4, comp_size[5]])
+            # Compute softmax(Q*K^T)*V*WO
+                X4_final = tf.squeeze(
+                    tf.layers.conv2d(tf.expand_dims(X4_attention_concat, 2),
+                                     filters=comp_size[5],
+                                     kernel_size=1,
+                                     strides=1,
+                                     name='Att_Comp_X4'))
+
+
             # Add Dropout
             if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
                 x_final = tf.nn.dropout(
                     x_final,
                     keep_prob=self.keep_prob_attention)
-        return x_final
+        if X4 is not None:
+            return [x_final, X4_final]
+        else:
+            return x_final
 
     def _layer_normalization(self, x, scope=None, shape=None):
         if shape is None:
@@ -778,14 +817,22 @@ class Model(object):
                 X2_enc = tf.concat([X2_word_enc, X2_char_enc], axis=2)
             else: #same encoder for both
                 X1_enc, X2_enc = self._encoder(X1, X2, self.WEOs+self.COs)
-            att_layer_X1X1 = self._layer_normalization(
-                                tf.add(X1,
-                                       self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1,
+            len_X1 = tf.shape(X1)[1]
+            len_X2 = tf.shape(X2)[1]
+            X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
+            X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
+            X1_enc_red, X2_enc_red = self._encoder(X1_enc_red, X2_enc_red, out_size)
+            att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
                                                        scope=X1X1,
-                                                       comp_size=X1_comp_size)),
+                                                       comp_size=X1_comp_size)
+            att_layer_X1X1 = self._layer_normalization(
+                                tf.add(X1,
+                                       att_layer_X1X1_out),
                                 scope='norm_'+X1X1,
                                 shape=X1_comp_size[0])
+
+            X1_enc_out = self._layer_normalization(X1_enc_out+X1_enc_red, scope='norm_Encoder'+X1X1,shape=out_size)
 
             FF_X1X1 = self._layer_normalization(
                                     tf.add(att_layer_X1X1,
@@ -795,14 +842,17 @@ class Model(object):
                                     scope='norm_FF_'+X1X1,
                                     shape=X1_comp_size[0])
 
-            att_layer_X2X2 = self._layer_normalization(
-                                tf.add(X2,
-                                       self._attention_layer(X1=X2_enc, X2=X2_enc, X3=X2,
+            att_layer_X2X2_out, X2_enc_out = self._attention_layer(X1=X2_enc, X2=X2_enc, X3=X2, X4=X2_enc_red,
                                                        mask=mask[X2X2],
                                                        scope=X2X2,
-                                                       comp_size=X2_comp_size)),
-                                scope='norm_' + X2X2,
+                                                       comp_size=X2_comp_size)
+
+            att_layer_X2X2 = self._layer_normalization(
+                                tf.add(X2,
+                                       att_layer_X2X2_out),
+                                scope='norm_'+X2X2,
                                 shape=X2_comp_size[0])
+            X2_enc_out = self._layer_normalization(X2_enc_out+X2_enc_red, scope='norm_Encoder'+X2X2,shape=out_size)
 
             att_layer_X1X2 = self._layer_normalization(
                                 tf.add(att_layer_X2X2,
@@ -812,7 +862,7 @@ class Model(object):
                                                        mask=mask[X2X1],
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size)),
-                                scope='norm_'+X1X2,
+                                scope='norm_'+X2X1,
                                 shape=X2_comp_size[0])
 
             FF_X2X2 = self._layer_normalization(
@@ -849,7 +899,9 @@ class Model(object):
             output_1 = tf.squeeze(output_1, 1)
             output_2 = tf.squeeze(output_2, 1)
             output_1.set_shape([self.Bs, length_X1, out_size])
+            output_1 = output_1+X1_enc_out
             output_2.set_shape([self.Bs, length_X2, out_size])
+            output_2 = output_2+X2_enc_out
             if switch:
                 return output_2, output_1
             else:
@@ -1559,17 +1611,18 @@ class Model(object):
                                                    tf.expand_dims(self.x_mask, 2),
                                                    tf.float32),keep_prob=self.keep_prob_word_passage))
 
-        if self.config['model']['one_layer_reduction']:
-            WEAs_reduct = self.WEOs+self.COs
-            FFHs_reduct = WEAs_reduct*2
-            Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs]#size of q attention model/q processing size/size of x attention model
-            X_Cs = Q_Cs
-            q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs)
 
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
-                if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
+                if self.config['model']['one_layer_reduction']:
+                    WEAs_reduct = self.WEOs+self.COs
+                    FFHs_reduct = WEAs_reduct*2
+                    Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs, self.WEAs]#size of q attention model/q processing size/size of x attention model/number of heads/output_size of X4
+                    X_Cs = Q_Cs
+                    q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs) #It is already encoded
+
+                elif ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                     #An encoder for char and word are defined separetely
                     x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
                     q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis=2)
