@@ -540,9 +540,9 @@ class Model(object):
     #                                        name="conv2d"))  # XW
     #    return X
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
-        with tf.variable_scope(scope):
+        with tf.variable_scope(scope, reuse=reuse):
             length_X1 = X1.get_shape()[1]
             X1 = tf.expand_dims(X1, 2)
             X1.set_shape([self.Bs, length_X1, 1, comp_size[0]])
@@ -556,6 +556,7 @@ class Model(object):
                                                   strides=1,
                                                   kernel_initializer=self.initializer,
                                                   use_bias=self.config['model_options']['use_bias'],
+                                                  reuse=reuse,
                                                   name='QKV_Comp'))
                 Q, K, V = tf.split(
                     QKV,
@@ -571,6 +572,7 @@ class Model(object):
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
                                                  use_bias=self.config['model_options']['use_bias'],
+                                                 reuse=reuse,
                                                  name='KV_Comp'))
                 K, V = tf.split(KV,
                                 num_or_size_splits=[comp_size[1], comp_size[1]],
@@ -583,6 +585,7 @@ class Model(object):
                                                 strides=1,
                                                 kernel_initializer=self.initializer,
                                                 use_bias=self.config['model_options']['use_bias'],
+                                                reuse=reuse,
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
@@ -599,6 +602,7 @@ class Model(object):
                                                 strides=1,
                                                 kernel_initializer=self.initializer,
                                                 use_bias=self.config['model_options']['use_bias'],
+                                                reuse=reuse,
                                                 name='Q_Comp'))
                 X2 = tf.squeeze(X2)
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
@@ -609,6 +613,7 @@ class Model(object):
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
                                                  use_bias=self.config['model_options']['use_bias'],
+                                                 reuse=reuse,
                                                  name='K_Comp'))
                 #X3 Processing
                 length_X3 = X3.get_shape()[1]
@@ -620,6 +625,7 @@ class Model(object):
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
                                                  use_bias=self.config['model_options']['use_bias'],
+                                                 reuse=reuse,
                                                  name='V_Comp'))
                 X3 = tf.squeeze(X3)
                 X3.set_shape([self.Bs, length_X3, comp_size[2]])
@@ -637,6 +643,7 @@ class Model(object):
                                                  strides=1,
                                                  kernel_initializer=self.initializer,
                                                  use_bias=self.config['model_options']['use_bias'],
+                                                 reuse=reuse,
                                                  name='V4_Comp'))
                 X4 = tf.squeeze(X4)
                 X4.set_shape([self.Bs, length_X4, comp_size[2]])
@@ -716,6 +723,7 @@ class Model(object):
                                      filters=comp_size[5],
                                      kernel_size=1,
                                      strides=1,
+                                     reuse=reuse,
                                      name='Att_Comp_X4'))
 
 
@@ -824,8 +832,9 @@ class Model(object):
             X1_enc_red, X2_enc_red = self._encoder(X1_enc_red, X2_enc_red, out_size)
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
-                                                       scope=X1X1,
-                                                       comp_size=X1_comp_size)
+                                                       scope='Layer_red',
+                                                       comp_size=X1_comp_size,
+                                                       reuse=False)
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
                                        att_layer_X1X1_out),
@@ -844,8 +853,9 @@ class Model(object):
 
             att_layer_X2X2_out, X2_enc_out = self._attention_layer(X1=X2_enc, X2=X2_enc, X3=X2, X4=X2_enc_red,
                                                        mask=mask[X2X2],
-                                                       scope=X2X2,
-                                                       comp_size=X2_comp_size)
+                                                       scope='Layer_red',
+                                                       comp_size=X2_comp_size,
+                                                       reuse=True)
 
             att_layer_X2X2 = self._layer_normalization(
                                 tf.add(X2,
@@ -886,7 +896,8 @@ class Model(object):
                                         use_bias=True,
                                         activation=None,
                                         kernel_initializer=self.initializer,
-                                        name='affine_op_X1')
+                                        reuse=False,
+                                        name='affine_op_X')
 
             output_2 = tf.layers.conv2d(FF_X2X2,
                                         filters=out_size,
@@ -895,7 +906,8 @@ class Model(object):
                                         use_bias=True,
                                         activation=None,
                                         kernel_initializer=self.initializer,
-                                        name='affine_op_X2')
+                                        reuse=True,
+                                        name='affine_op_X')
             output_1 = tf.squeeze(output_1, 1)
             output_2 = tf.squeeze(output_2, 1)
             output_1.set_shape([self.Bs, length_X1, out_size])
