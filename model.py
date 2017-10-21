@@ -1426,15 +1426,41 @@ class Model(object):
                                               name='W'))
             Q = tf.squeeze(Q)
             Q.set_shape([self.Bs, length_Q, self.WEAs])
-            logits = tf.reduce_mean(tf.matmul(X, tf.transpose(Q_Scaled, [0, 2, 1])), axis = 2)
+            logits = tf.matmul(Q_Scaled, tf.transpose(X, [0, 2, 1]))
+            logits_mean = tf.reduce_mean(logits, 2, keep_dims=True)
+            logits_std = tf.sqrt(1e-8+tf.reduce_mean(tf.square(logits-logits_mean),2, keep_dims=True))
+            logits_norm = (logits-logits_mean)/logits_std
+            logits_norm = tf.squeeze(tf.reduce_sum(logits_norm,1))
+            
+            """ Select one vector among n vectors by max(w*X) """
+            length_logits = logits_norm.get_shape()[1]
+            logits_norm = tf.expand_dims(tf.expand_dims(logits_norm, 2), 3)
+            logits_norm.set_shape([self.Bs, length_logits, 1, 1])
+            logits_norm = tf.layers.conv2d(logits_norm,
+                                      filters=32,
+                                      kernel_size=(9, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      activation=tf.nn.relu,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel')
+            logits_norm = tf.nn.dropout(logits_norm, keep_prob=self.keep_prob_selector)
+            logits_norm = tf.layers.conv2d(logits_norm,
+                                      filters=2,
+                                      kernel_size=(9, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel_2')
 
-            # Sofmax for attention of Q in X: softmax(X*W*Q)
-            softmax_X = tf.nn.softmax(
-                tf.add(
-                    tf.divide(logits, tf.sqrt(tf.cast(self.WEAs, tf.float32))),
-                    tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)),
-                dim=2)
-        return softmax_X, logits
+            logits_norm = tf.reshape(logits_norm, [self.Bs, -1, 2])
+            logits1, logits2 = tf.split(logits_norm, 2, 2)
+            logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
+            output1, output2 = self._process_logits(logits1, logits2, mask)
+
+        return output1, logits1, output2, logits2
 
     def _AoA_sel(self, Q, X, mask, scope):
         """ Attention over attention for computing y1"""
@@ -1682,6 +1708,11 @@ class Model(object):
                 X=x[-1],
                 mask=mask,
                 scope='y1_y2_sel')
+        elif config['model']['y1_sel'] == "cross":
+            self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._cross_sel(Q=q[-1],
+                X=x[-1],
+                mask=mask,
+                scope='y1_y2_sel')
         else:
             # Computing outputs
             self.yp, self.logits_y1 = self._y_selection(
@@ -1861,7 +1892,7 @@ class Model(object):
         """
         # TODO: add collections if useful. Otherwise delete them.
         # tf.add_to_collection('losses', ce_loss)
-        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2'):
+        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2') or (self.config['model']['y2_sel']=='cross'):
             ce_loss = -tf.reduce_sum(self.y_corrected*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
