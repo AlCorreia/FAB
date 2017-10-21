@@ -540,8 +540,13 @@ class Model(object):
     #                                        name="conv2d"))  # XW
     #    return X
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
+        keep_prob_attention = tf.pow(self.keep_prob_attention,dropout)
+        keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
+        keep_prob_pre_softmax = tf.pow(self.keep_prob_attention_pre_softmax,dropout)
+        keep_prob_post_softmax = tf.pow(self.keep_prob_attention_post_softmax,dropout)
+            
         with tf.variable_scope(scope, reuse=reuse):
             length_X1 = X1.get_shape()[1]
             X1 = tf.expand_dims(X1, 2)
@@ -672,7 +677,7 @@ class Model(object):
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, Scaling),
-                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=self.keep_prob_attention_pre_softmax), VERY_LOW_NUMBER)),
+                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
                     dim=-1)
             else:
                 softmax = tf.nn.softmax(
@@ -683,7 +688,7 @@ class Model(object):
             # Final mask is applied
             if self.config['train']['dropout_attention_post_softmax']<1.0:
                 # To normalize softmax sum to 1.
-                softmax = 1/self.keep_prob_attention_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), self.keep_prob_attention_post_softmax)
+                softmax = 1/keep_prob_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), keep_prob_post_softmax)
             else:
                 softmax = tf.multiply(mask, softmax)
 
@@ -698,7 +703,7 @@ class Model(object):
                 axis=2)
             x_attention_concat.set_shape([self.Bs, length_X2, int(WEPs)])
             if self.config['train']['dropout_concat']<1.0: #This is done to save memory if dropout is not used
-                x_attention_concat = tf.nn.dropout(x_attention_concat, keep_prob=self.keep_prob_concat)
+                x_attention_concat = tf.nn.dropout(x_attention_concat, keep_prob=keep_prob_concat)
             # Compute softmax(Q*K^T)*V*WO
             x_final = tf.squeeze(
                 tf.layers.conv2d(tf.expand_dims(x_attention_concat, 2),
@@ -731,7 +736,7 @@ class Model(object):
             if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
                 x_final = tf.nn.dropout(
                     x_final,
-                    keep_prob=self.keep_prob_attention)
+                    keep_prob=keep_prob_attention)
         if X4 is not None:
             return [x_final, X4_final]
         else:
@@ -762,7 +767,9 @@ class Model(object):
                 normalized_x = normalized_x * W_Scale + b_Scale
         return normalized_x
 
-    def _FeedForward_NN(self, X, scope=None, comp_size=None):
+    def _FeedForward_NN(self, X, scope=None, comp_size=None, dropout=1.0):
+        keep_prob_relu_func = tf.pow(self.keep_prob_Relu,dropout)  #If dropout greater than 2.0, than a original dropout of 0.9 is reduced to 0.81
+        keep_prob_FF_func = tf.pow(self.keep_prob_FF, dropout)
         # Starting variables
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
@@ -779,7 +786,7 @@ class Model(object):
                                          kernel_initializer=self.initializer,
                                          name='affine_op_1')
             if self.config['train']['dropout_Relu'] < 1.0:  # This is done to save memory if dropout is not used
-                affine_op = tf.nn.dropout(affine_op, keep_prob=self.keep_prob_Relu)
+                affine_op = tf.nn.dropout(affine_op, keep_prob=keep_prob_relu_func)
             X = tf.squeeze(X)
             X.set_shape([self.Bs, length_X, comp_size[0]])
             # Second affine oepration.
@@ -795,7 +802,7 @@ class Model(object):
             if self.config['train']['dropout_FF']<1.0: #This is done to save memory if dropout is not used
                 output = tf.nn.dropout(
                     output,
-                    keep_prob=self.keep_prob_FF)
+                    keep_prob=keep_prob_FF_func)
         return output
 
     def _one_layer_reduction(self, Q, X, mask, scope, out_size, Q_Cs, X_Cs, switch=False):
@@ -834,7 +841,8 @@ class Model(object):
                                                        mask=mask[X1X1],
                                                        scope='Layer_red',
                                                        comp_size=X1_comp_size,
-                                                       reuse=False)
+                                                       reuse=False,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
                                        att_layer_X1X1_out),
@@ -847,7 +855,8 @@ class Model(object):
                                     tf.add(att_layer_X1X1,
                                            self._FeedForward_NN(att_layer_X1X1,
                                                           'FF' + X1X1,
-                                                           comp_size=X1_comp_size)),
+                                                           comp_size=X1_comp_size,
+                                                           dropout=self.config['model']['reduced_layer_dropout_amplification'])),
                                     scope='norm_FF_'+X1X1,
                                     shape=X1_comp_size[0])
 
@@ -855,7 +864,8 @@ class Model(object):
                                                        mask=mask[X2X2],
                                                        scope='Layer_red',
                                                        comp_size=X2_comp_size,
-                                                       reuse=True)
+                                                       reuse=True,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
 
             att_layer_X2X2 = self._layer_normalization(
                                 tf.add(X2,
@@ -871,7 +881,8 @@ class Model(object):
                                                        X2=att_layer_X2X2,
                                                        mask=mask[X2X1],
                                                        scope=X2X1,
-                                                       comp_size=X2_comp_size)),
+                                                       comp_size=X2_comp_size,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])),
                                 scope='norm_'+X2X1,
                                 shape=X2_comp_size[0])
 
@@ -879,7 +890,8 @@ class Model(object):
                                     tf.add(att_layer_X1X2,
                                            self._FeedForward_NN(att_layer_X1X2,
                                                                 'FF_' + X2X2,
-                                                                comp_size=X2_comp_size)),
+                                                                comp_size=X2_comp_size,
+                                                                dropout=self.config['model']['reduced_layer_dropout_amplification'])),
                                     scope='norm_FF_' + X2X2,
                                     shape=X2_comp_size[0])
 

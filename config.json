@@ -29,7 +29,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID270 word, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
+                "name": "ID290 word, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -72,6 +72,7 @@
 		"encode_char_and_vec_separately":false,
                 "encoder_scaling":false,
 		"one_layer_reduction":false,
+		"reduced_layer_dropout_amplification":1.0,
 		"y1_sel":"double_conv",
         	"y2_sel":"linear"
 	},
@@ -113,7 +114,7 @@
 		"layer_type": "original",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
-		"word2vec_orthonormal_scaling":true,
+		"word2vec_orthonormal_scaling":false,
 		"use_bias": true,
 		"encoder_normalization": false
 				}
