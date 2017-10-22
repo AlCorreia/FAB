@@ -122,7 +122,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     p = []
     word_len = []
     paragraph_len, question_len = [], []
-    word_counter, char_counter = Counter(), Counter()
+    word_counter, char_counter, word_counter_lower = Counter(), Counter(), Counter()
     start_ai = int(round(len(source_data['data']) * start_ratio))
     stop_ai = int(round(len(source_data['data']) * stop_ratio))
     for ai, article in enumerate(tqdm(source_data['data'][start_ai:stop_ai])):
@@ -147,6 +147,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
             for xij in xi:
                 word_counter[xij] += len(para['qas'])
+                word_counter_lower[xij.lower()]+=len(para['qas'])
                 for xijk in xij:
                     char_counter[xijk] += len(para['qas'])
 
@@ -180,6 +181,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                     yi.append([yi0, yi1])
                     cyi.append([cyi0, cyi1])
                 for qij in qi:
+                    word_counter_lower[qij.lower()]+=1
                     word_counter[qij] += 1
                     for qijk in qij:
                         char_counter[qijk] += 1
@@ -207,7 +209,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len}
     shared = {'x': x, 'cx': cx, 'p': p,
-              'word_counter': word_counter, 'char_counter': char_counter,
+              'word_counter': word_counter, 'word_counter_lower': word_counter_lower, 'char_counter': char_counter,
               'word2vec': word2vec_dict, 'char2vec': char2vec_dict}
 
     print("saving ...")
@@ -235,7 +237,7 @@ def read_data(config, data_type, ref, data_filter=None):
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     word2vec_dict = shared['word2vec']
     char2vec_dict = shared['char2vec']
-    word_counter = shared['word_counter']
+    word_counter = shared['word_counter_lower'] #LOWER CASE
     char_counter = shared['char_counter']
     if config['pre']['finetune']: #false
         shared['unk_word2idx'] = {word: idx + 2 for idx, word in
@@ -353,6 +355,7 @@ def data_filter_func(config, data, shared):
 
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
+    pdb.set_trace()
     config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype=np.float32)
     if config['model']['char_embedding']:
         config['model']['char_vocabulary_size'] = len(data_set['shared']['emb_mat_unk_chars'])
