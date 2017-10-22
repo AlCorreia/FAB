@@ -1290,7 +1290,7 @@ class Model(object):
                                       padding='same',
                                       use_bias=True,
                                       kernel_initializer=self.initializer,
-                                      activation=tf.nn.sigmoid,
+                                      activation=None,
                                       name='second_loss')
         return tf.reshape(logits, [self.Bs, -1])
 
@@ -1950,7 +1950,7 @@ class Model(object):
             self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
 
         if self.config['model']['second_loss']:
-            ce_loss3 = -tf.reduce_sum(self.y3*tf.log(tf.clip_by_value(self.yp3, 1e-10,1.0)), axis=1)
+            ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2, ce_loss3]))
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
         else:
