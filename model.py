@@ -82,6 +82,9 @@ class Model(object):
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
+        # Add another placeholder if a second loss is used
+        if config['model']['second_loss']:
+            self.y3 = tf.placeholder('float32', [self.Bs, None], name='y3')
         self.new_emb_mat = tf.placeholder(tf.float32,
                                           [None, self.WEs],
                                           name='new_emb_mat')
@@ -1272,6 +1275,25 @@ class Model(object):
 
         return output1, logits1, output2, logits2
 
+    def _second_loss(self, X, mask, scope):
+        """
+        Apply a sigmoid to define the probability of selecting each word
+
+        """
+        length_X = X.get_shape()[1]
+        with tf.variable_scope(scope):
+            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            logits = tf.layers.conv2d(X,
+                                      filters=1,
+                                      kernel_size=(1, 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      kernel_initializer=self.initializer,
+                                      activation=tf.nn.sigmoid,
+                                      name='second_loss')
+        return tf.reshape(logits, [self.Bs, -1])
+
     def _sym_double_conv(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
@@ -1755,6 +1777,9 @@ class Model(object):
         self.Start_Index = tf.argmax(self.yp, axis=-1)
         self.End_Index = tf.argmax(self.yp2, axis=-1)
 
+        if config['model']['second_loss']:
+            self.yp3 = self._second_loss(X=x[-1], mask=mask, scope="y3")
+
     def _build_forward(self):
         """
             Builds the model's feedforward network.
@@ -1922,10 +1947,14 @@ class Model(object):
         else:
             ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
-        # tf.add_to_collection("losses", ce_loss2)
 
-        # self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
-        self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2]))
+        if self.config['model']['second_loss']:
+            ce_loss3 = -tf.reduce_sum(self.y3*tf.log(tf.clip_by_value(self.yp3, 1e-10,1.0)), axis=1)
+            self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2, ce_loss3]))
+            tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
+        else:
+            self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2]))
+
         tf.summary.scalar('ce_loss', tf.reduce_mean(ce_loss))
         tf.summary.scalar('ce_loss2', tf.reduce_mean(self.ce_loss2))
         tf.summary.scalar('loss', self.loss)
@@ -2040,6 +2069,13 @@ class Model(object):
                     y2_new[i][y2[i]] += label_smoothing
             return np.int_(new_seq), y1_new, y2_new
 
+        def padding_y3(seq, y1, y2, max_size=None):
+            seq_len = [len(seq[i]) for i in range(len(seq))]
+            if max_size is None:
+                max_size = max(seq_len)
+            y3 = [np.concatenate([np.zeros(y1[i][0]), np.ones(y2[i][0]-y1[i][0]+1), np.zeros(max_size-y2[i][0]-1)], axis=0) for i in range(len(seq))]
+            return y3
+
         def padding_chars(seq, max_size_sentence, max_size=None):  # for padding a batch
             seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
             if max_size is None:
@@ -2129,7 +2165,9 @@ class Model(object):
             feed_dict[self.qc] = qc
             feed_dict[self.short_words_char] = short_words_list
             feed_dict[self.long_words_char] = long_words_list
-            #pdb.set_trace()
+
+        if self.config['model']['second_loss']:
+            feed_dict[self.y3] = padding_y3(x, y1, y2)
 
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
