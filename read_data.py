@@ -355,7 +355,6 @@ def data_filter_func(config, data, shared):
 
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
-    pdb.set_trace()
     config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype=np.float32)
     if config['model']['char_embedding']:
         config['model']['char_vocabulary_size'] = len(data_set['shared']['emb_mat_unk_chars'])
