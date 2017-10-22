@@ -546,7 +546,7 @@ class Model(object):
         keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
         keep_prob_pre_softmax = tf.pow(self.keep_prob_attention_pre_softmax,dropout)
         keep_prob_post_softmax = tf.pow(self.keep_prob_attention_post_softmax,dropout)
-            
+
         with tf.variable_scope(scope, reuse=reuse):
             length_X1 = X1.get_shape()[1]
             X1 = tf.expand_dims(X1, 2)
@@ -1227,17 +1227,17 @@ class Model(object):
         with tf.variable_scope(scope):
             X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
             logits = tf.layers.conv2d(X,
-                                      filters=2,
-                                      kernel_size=(5, 1),
+                                      filters=16,
+                                      kernel_size=(1, 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
                                       kernel_initializer=self.initializer,
                                       name='conv_sel_2')
 
-            logits = tf.reshape(logits, [self.Bs, -1, 2])
+            logits = tf.squeeze(logits, 2)
             logits1, logits2 = tf.split(logits, 2, 2)
-            logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
+            logits1, logits2 = tf.reduce_max(logits1, -1), tf.reduce_max(logits2, -1)
             output1, output2 = self._process_logits(logits1, logits2, mask)
         return output1, logits1, output2, logits2
 
@@ -1455,7 +1455,7 @@ class Model(object):
             logits_std = tf.sqrt(1e-8+tf.reduce_mean(tf.square(logits-logits_mean),2, keep_dims=True))
             logits_norm = (logits-logits_mean)/logits_std
             logits_norm = tf.squeeze(tf.reduce_sum(logits_norm,1))
-            
+
             """ Select one vector among n vectors by max(w*X) """
             length_logits = logits_norm.get_shape()[1]
             logits_norm = tf.expand_dims(tf.expand_dims(logits_norm, 2), 3)
