@@ -1601,7 +1601,8 @@ class Model(object):
             word_emb_mat = tf.get_variable(
                 "word_emb_mat",
                 dtype=tf.float32,
-                initializer=config['model']['emb_mat_unk_words'])  # [WVs,WEAs]
+                shape=[self.WVs,self.WEs],
+                initializer=self.initializer)  # [WVs,WEAs]
             if config['pre']['use_glove_for_unk']:
                 word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat],
                                          axis=0)
