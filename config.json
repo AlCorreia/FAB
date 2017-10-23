@@ -19,13 +19,14 @@
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
-		"word_count_th": 1000,
+		"word_count_th": 100,
 		"char_count_th": 50,
 		"max_question_size": 60,
 		"max_paragraph_size": 400,
 		"max_word_size": 20,
 		"known_if_glove": true,
-		"use_glove_for_unk": true
+		"use_glove_for_unk": true,
+		"number_of_unk":1
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",

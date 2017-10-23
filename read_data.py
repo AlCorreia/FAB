@@ -200,7 +200,11 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # TODO: Add debug option as in the original code
             # if args.debug:
             #     break
-    word2vec_dict = get_word2vec(config, word_counter)
+    
+    if config['glove']['corpus']=='6B':
+        word2vec_dict = get_word2vec(config, word_counter_lower)
+    else:
+        word2vec_dict = get_word2vec(config, word_counter)
     char2vec_dict = {}
     if config['model']['pre_trained_char']:
         char2vec_dict = get_char2vec(config, char_counter)
@@ -216,7 +220,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     save(config, data, shared, out_name)
 
 
-def read_data(config, data_type, ref, data_filter=None):
+def read_data(config, data_type, data_filter=None, data_train=None):
     data_path = os.path.join(config['directories']['dir'], "data_{}.json".format(data_type))
     shared_path = os.path.join(config['directories']['dir'], "shared_{}.json".format(data_type))
     with open(data_path, 'r') as fh:
@@ -236,77 +240,90 @@ def read_data(config, data_type, ref, data_filter=None):
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     word2vec_dict = shared['word2vec']
-    char2vec_dict = shared['char2vec']
-    word_counter = shared['word_counter_lower'] #LOWER CASE
-    char_counter = shared['char_counter']
-    if config['pre']['finetune']: #false
-        shared['unk_word2idx'] = {word: idx + 2 for idx, word in
-                              enumerate(word for word, count in word_counter.items()
-                                        if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
-    else:
-        assert config['pre']['known_if_glove']
-        assert config['pre']['use_glove_for_unk']
-        shared['unk_word2idx'] = {word: idx + 2 for idx, word in #add 2 to UNK and NULL
-                              enumerate(word for word, count in word_counter.items()
-                                        if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
-
-    if config['model']['pre_trained_char']:
-        shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                  enumerate(char for char, count in char_counter.items()
-                                            if count > config['pre']['char_count_th'] and char not in char2vec_dict)} #threshold =50
-    else:
-        shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                  enumerate(char for char, count in char_counter.items()
-                                            if count > config['pre']['char_count_th'])} # threshold =50
-
-    NULL = "-NULL-"
-    UNK = "-UNK-"
-    shared['unk_word2idx'][NULL] = 0
-    shared['unk_word2idx'][UNK] = 1
-    shared['unk_char2idx'][NULL] = 0
-    shared['unk_char2idx'][UNK] = 1
-
-    if config['pre']['use_glove_for_unk']:
-        # create word2idx for uknown and known words
-        word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
-        word2vec_dict = shared['word2vec']
-
-        shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
-
-        known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
-        # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-
-        shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
-
-        unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
-
-        shared['emb_mat_unk_words'] = np.array([unk_idx2vec_dict[idx] if idx in unk_idx2vec_dict
-                        else np.random.multivariate_normal(np.zeros(int(config['glove']['vec_size'])), np.eye(int(config['glove']['vec_size'])))
-                        for idx in range(word_vocab_size)]) #create random vectors for new words
-
-    if config['model']['char_embedding']:  # If there is char embedding
+    if data_train is not None: #dev is going to use the same unk chars and words. It changes only its known words from word2vec.
+        #CHAR EMBEDDING
+        shared['unk_char2idx'] = data_train['shared']['unk_char2idx']
         if config['model']['pre_trained_char']:
-            char_vocab_size = len(shared['unk_char2idx'])  # vocabulary size of unknown chars
-            char2vec_dict = shared['char2vec']
+            shared['known_char2idx'] = data_train['shared']['known_char2idx'] if config['model']['pre_trained_char'] else {}
+            shared['emb_mat_known_chars'] = data_train['shared']['emb_mat_known_chars']
+        #WORDS EMBEDDING
+        shared['unk_word2idx'] = data_train['shared']['unk_word2idx']
+        shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
+        known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
+        shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
+    else:
+        char2vec_dict = shared['char2vec']
+        if config['glove']['corpus']=='6B':
+            word_counter = shared['word_counter_lower'] #LOWER CASE
+        else:
+            word_counter = shared['word_counter']
+        char2vec_dict = {}
+        number_of_unk = config['pre']['number_of_unk']
+        char_counter = shared['char_counter']
+    #WORD PRE-PROCESSING
+        if config['pre']['finetune']: #false
+            shared['unk_word2idx'] = {word: idx + 1 + number_of_unk for idx, word in
+                              enumerate(word for word, count in word_counter.items()
+                                            if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
+        else:
+            assert config['pre']['known_if_glove']
+            assert config['pre']['use_glove_for_unk']
+            shared['unk_word2idx'] = {word: idx + 1+number_of_unk for idx, word in #add 2 to UNK and NULL
+                                  enumerate(word for word, count in word_counter.items()
+                                            if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
 
-            shared['known_char2idx'] = {char: idx for idx, char in enumerate(char for char in char2vec_dict.keys() if char not in shared['unk_char2idx'])}
+        #CHAR PRE-PROCESSING
+        if config['model']['pre_trained_char']:
+            shared['unk_char2idx'] = {char: idx + 2 for idx, char in
+                                      enumerate(char for char, count in char_counter.items()
+                                                if count > config['pre']['char_count_th'] and char not in char2vec_dict)} #threshold =50
+        else:
+            shared['unk_char2idx'] = {char: idx + 2 for idx, char in
+                                      enumerate(char for char, count in char_counter.items()
+                                                if count > config['pre']['char_count_th'])} # threshold =50
 
-            known_char_idx2vec_dict = {idx: char2vec_dict[char] for char, idx in shared['known_char2idx'].items()}
+        NULL = "-NULL-"
+        UNK = "-UNK-"
+        shared['unk_word2idx'][NULL] = 0
+        for i in range(number_of_unk):
+            shared['unk_word2idx'][UNK+str(i)] = i+1
+        shared['unk_char2idx'][NULL] = 0
+        shared['unk_char2idx'][UNK] = 1
+
+        if config['pre']['use_glove_for_unk']:
+            # create word2idx for uknown and known words
+            word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
+            word2vec_dict = shared['word2vec']
+
+            shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
+
+            known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
             # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
 
-            shared['emb_mat_known_chars'] = np.array([known_char_idx2vec_dict[idx] for idx in range(len(known_char_idx2vec_dict))], dtype='float32')
+            shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
 
-            unk_char_idx2vec_dict = {idx: char2vec_dict[word] for char, idx in shared['unk_char2idx'].items() if char in char2vec_dict }
-            shared['emb_mat_unk_chars'] = np.array([unk_char_idx2vec_dict[idx] if idx in unk_char_idx2vec_dict
-                            else np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])),
-                                                               config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
-                                                   for idx in range(char_vocab_size)]) #create random vectors for new words
-        else:
-            char_vocab_size = len(shared['unk_char2idx'])
-            shared['known_char2idx'] = {}
-            shared['emb_mat_unk_chars'] = np.array([np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])),
-                                                                          config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
-                                           for idx in range(char_vocab_size)]) #create random vectors for new words
+            unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
+
+        if config['model']['char_embedding']:  # If there is char embedding
+            if config['model']['pre_trained_char']:
+                char_vocab_size = len(shared['unk_char2idx'])  # vocabulary size of unknown chars
+                char2vec_dict = shared['char2vec']
+
+                shared['known_char2idx'] = {char: idx for idx, char in enumerate(char for char in char2vec_dict.keys() if char not in shared['unk_char2idx'])}
+
+                known_char_idx2vec_dict = {idx: char2vec_dict[char] for char, idx in shared['known_char2idx'].items()}
+                # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
+
+                shared['emb_mat_known_chars'] = np.array([known_char_idx2vec_dict[idx] for idx in range(len(known_char_idx2vec_dict))], dtype='float32')
+
+                unk_char_idx2vec_dict = {idx: char2vec_dict[word] for char, idx in shared['unk_char2idx'].items() if char in char2vec_dict }
+                shared['emb_mat_unk_chars'] = np.array([unk_char_idx2vec_dict[idx] if idx in unk_char_idx2vec_dict
+                                else np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])),
+                                                                   config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
+                                                       for idx in range(char_vocab_size)]) #create random vectors for new words
+            else:
+                char_vocab_size = len(shared['unk_char2idx'])
+                shared['known_char2idx'] = {}
 
     data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
     return data_set
@@ -354,9 +371,7 @@ def data_filter_func(config, data, shared):
 
 
 def update_config(config, data_set):
-    config['model']['vocabulary_size'] = len(data_set['shared']['emb_mat_unk_words'])
-    pdb.set_trace()
-    config['model']['emb_mat_unk_words'] = np.array(data_set['shared']['emb_mat_unk_words'], dtype=np.float32)
+    config['model']['vocabulary_size'] = len(data_set['shared']['unk_word2idx'])
     if config['model']['char_embedding']:
         config['model']['char_vocabulary_size'] = len(data_set['shared']['emb_mat_unk_chars'])
         config['model']['emb_mat_unk_chars'] = np.array(data_set['shared']['emb_mat_unk_chars'], dtype=np.float32)

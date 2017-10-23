@@ -6,6 +6,7 @@ import random
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 from tqdm import tqdm
+from random import randint
 from utils import plot, send_mail, EM_and_F1
 import pdb
 
@@ -2056,12 +2057,51 @@ class Model(object):
             words_dict = {}
             word_size_counter = [0]*(self.config['pre']['max_word_size']+1)
         for i in batch_idxs:
-            qi = list(map(
-                word2id,
-                dataset['data']['q'][i]))
+            word_count = {}
+            word_list_x = {}
+            word_list_q = {}
             rxi = dataset['data']['*x'][i]
             yi = dataset['data']['y'][i]
-            xi = list(map(word2id, dataset['shared']['x'][rxi[0]][rxi[1]]))
+            question = dataset['data']['q'][i]
+            par = dataset['shared']['x'][rxi[0]][rxi[1]]
+            xi = list(map(
+                word2id,
+                par))
+            qi = list(map(
+                word2id,
+                question))
+            for j in range(len(par)): #Find all UNK words in X
+                if  xi[j]==1:
+                    if par[j] in word_count:
+                        word_count[par[j]]+=1
+                        word_list_x[par[j]].append(j)
+                    else:
+                        word_count[par[j]]=1
+                        word_list_x[par[j]]=[j]
+            for j in range(len(question)): #Find all UNK words in Q
+                if  qi[j]==1:
+                    if question[j] in word_list_q: #If not in word_list
+                        word_count[question[j]]+=1
+                        word_list_q[question[j]].append(j)
+                    elif question[j] in word_count: #if in word_count (because of X), but not in word_q
+                        word_count[question[j]]+=1
+                        word_list_q[question[j]]=[j]
+                    else: #if neither in word_list nor in word_count_q
+                        word_count[question[j]]=1
+                        word_list_q[question[j]]=[j]
+            ordered_words = sorted(word_count.items(), key=lambda x: x[1], reverse=True)
+            used_unk = set()
+            for j in range(len(ordered_words)):
+                if j<(self.config['pre']['number_of_unk']-1):
+                    while(j>=len(used_unk)):
+                        unk = randint(2, self.config['pre']['number_of_unk'])
+                        used_unk.add(unk)
+                    if ordered_words[j][0] in word_list_x: #If the UNK word is in x
+                        for k in word_list_x[ordered_words[j][0]]: #To guarantee that random UNK is the same for Q and X
+                            xi[k] = unk
+                    if ordered_words[j][0] in word_list_q: #If the UNK word is in q
+                        for k in word_list_q[ordered_words[j][0]]:
+                            xi[k] = unk
 
 
             if self.config['model']['char_embedding']:
