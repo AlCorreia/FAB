@@ -23,6 +23,7 @@ def main(config):
     if config['model']['run']:
         data = read_data(config, 'train', data_filter=True)
         data_dev = read_data(config, 'dev', data_filter=True, data_train=data)
+        pdb.set_trace()
         # update config with max_word_size, max_passage_size, embedded_vector
         config = update_config(config, data)
         # Create an instance of the model
@@ -80,7 +81,7 @@ def main(config):
             if i % config['train']['steps_to_email'] == 0 and i > 0:
                 valid_idxs = data_dev['valid_idxs']
                 Start_Index, End_Index, prob = model.evaluate_all_dev(valid_idxs[0:config['train']['batch_size']], data_dev)
-                create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index, prob)
+                create_pdf(config, valid_idxs[0:config['train']['batch_size']], Start_Index, End_Index, prob, data_dev=data_dev)
                 send_mail(attach_dir=['./config.json','./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'], body=last_info)
     # To check the exact match and F1 of the model for dev
     if config['model']['evaluate_dev']:

@@ -59,7 +59,7 @@ class MCLine(Flowable):
         self.canv.line(0, self.height, self.width, self.height)
 
 
-def create_pdf(config, ids=None, Start_Index=None, End_Index=None, prob=None):
+def create_pdf(config, ids=None, Start_Index=None, End_Index=None, prob=None, data_dev=None):
 
     # Create a reportlab doc
     doc = SimpleDocTemplate("./plots/answers.pdf", pagesize=A4,
@@ -70,7 +70,6 @@ def create_pdf(config, ids=None, Start_Index=None, End_Index=None, prob=None):
     styles.add(ParagraphStyle(name='Justify', alignment=TA_JUSTIFY))
 
     # Read dev file
-    data_dev = read_data(config, 'dev', ref=False, data_filter=True)
     if ids is None:
         ids = data_dev['valid_idxs']
     x, q, y1, y2 = get_feed_dict(config, ids, data_dev)
