@@ -23,7 +23,6 @@ def main(config):
     if config['model']['run']:
         data = read_data(config, 'train', data_filter=True)
         data_dev = read_data(config, 'dev', data_filter=True, data_train=data)
-        pdb.set_trace()
         # update config with max_word_size, max_passage_size, embedded_vector
         config = update_config(config, data)
         # Create an instance of the model
