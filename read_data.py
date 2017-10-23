@@ -243,9 +243,8 @@ def read_data(config, data_type, data_filter=None, data_train=None):
     if data_train is not None: #dev is going to use the same unk chars and words. It changes only its known words from word2vec.
         #CHAR EMBEDDING
         shared['unk_char2idx'] = data_train['shared']['unk_char2idx']
-        if config['model']['pre_trained_char']:
-            shared['known_char2idx'] = data_train['shared']['known_char2idx'] if config['model']['pre_trained_char'] else {}
-            shared['emb_mat_known_chars'] = data_train['shared']['emb_mat_known_chars']
+        shared['known_char2idx'] = data_train['shared']['known_char2idx'] if config['model']['pre_trained_char'] else {}
+        shared['emb_mat_known_chars'] = data_train['shared']['emb_mat_known_chars'] if config['model']['pre_trained_char'] else {}
         #WORDS EMBEDDING
         shared['unk_word2idx'] = data_train['shared']['unk_word2idx']
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
@@ -373,8 +372,7 @@ def data_filter_func(config, data, shared):
 def update_config(config, data_set):
     config['model']['vocabulary_size'] = len(data_set['shared']['unk_word2idx'])
     if config['model']['char_embedding']:
-        config['model']['char_vocabulary_size'] = len(data_set['shared']['emb_mat_unk_chars'])
-        config['model']['emb_mat_unk_chars'] = np.array(data_set['shared']['emb_mat_unk_chars'], dtype=np.float32)
+        config['model']['char_vocabulary_size'] = len(data_set['shared']['unk_char2idx'])
     return config
 
 
