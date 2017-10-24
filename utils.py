@@ -1,6 +1,7 @@
 import re
 import sys
 import matplotlib as mpl
+import tensorflow as tf
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -103,6 +104,23 @@ def plot(X, EM, F1, save_dir):
     handles, labels = axarr[1].get_legend_handles_labels()
     axarr[1].legend(handles[::-1], labels[::-1])
     plt.savefig(save_dir)
+
+
+def F1(y1, y2, prob_yp1, prob_yp2):
+    y1 = tf.cast(tf.argmax(y1, axis=-1), tf.float32)
+    y2 = tf.cast(tf.argmax(y2, axis=-1), tf.float32)
+    yp1 = tf.cast(tf.argmax(prob_yp1, axis=-1), tf.float32)
+    yp2 = tf.cast(tf.argmax(prob_yp2, axis=-1), tf.float32)
+    TT = tf.minimum(tf.cast(y2 + 1, tf.float32), tf.cast(yp2 + 1, tf.float32)) - tf.maximum(y1, yp1)
+    TT = tf.maximum(TT, 0)
+    FT = yp2 + 1 - yp1 - TT
+    FF = y2 + 1 - y1 - TT
+    a = TT/(TT+FT)
+    b = TT/(TT+FF)
+    ab = tf.multiply(a, b)
+    F1 = tf.where(tf.equal(ab, 0.0), tf.zeros_like(y1), (2.0/(1.0/a+1.0/b)))
+
+    return F1
 
 
 def EM_and_F1(answer, answer_est):

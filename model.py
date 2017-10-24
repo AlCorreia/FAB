@@ -7,7 +7,7 @@ import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 from tqdm import tqdm
 from random import randint
-from utils import plot, send_mail, EM_and_F1
+from utils import plot, send_mail, EM_and_F1, F1
 import pdb
 
 from my_tf import optimize_loss
@@ -86,10 +86,10 @@ class Model(object):
         # Add another placeholder if a second loss is used
         if config['model']['second_loss']:
             self.y3 = tf.placeholder('float32', [self.Bs, None], name='y3')
-        if config['pre']['use_glove_for_unk']:
-            self.new_emb_mat = tf.placeholder(tf.float32,
-                                              [None, self.WEs],
-                                              name='new_emb_mat')
+
+        self.new_emb_mat = tf.placeholder(tf.float32,
+                                          [None, self.WEs],
+                                          name='new_emb_mat')
 
         # Masks
         self.x_mask = tf.sign(self.x)
@@ -1949,10 +1949,13 @@ class Model(object):
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
             ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
-            self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
+            self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2, 1e-10, 1.0)), axis=1)
 
         if self.config['model']['second_loss']:
-            ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
+            batch_F1 = F1(self.y, self.y2, self.yp, self.yp2)
+            prob = tf.reduce_max(self.yp, axis=-1) * tf.reduce_max(self.yp2, axis=-1)
+            ce_loss3 = -batch_F1*prob
+            # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2, ce_loss3]))
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
         else:
