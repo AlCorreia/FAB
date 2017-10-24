@@ -516,6 +516,11 @@ class Model(object):
 
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
+        if self.config['model']['number_of_totens']>0:
+            size_each_q = tf.cast(tf.expand_dims(tf.reduce_sum(self.q_mask, axis=1),1), tf.int32) #Compute size of each question
+            range_q = tf.expand_dims(tf.range(0, size_q, 1), 0) #generate range sequence
+            mask_encoder_q = tf.cast(tf.round(tf.cast(tf.greater(size_each_q-self.config['model']['number_of_totens'], range_q), tf.int32)), tf.float32) #Compute new mask without totens
+            encoder_q = tf.multiply(encoder_q, tf.expand_dims(mask_encoder_q,2)) #Compute masked encoder_q to not encode totens
         q_encoded = tf.add(Q, encoder_q)
         if self.config['train']['dropout_encoder']<1.0: #This is done to save memory if dropout is not used
             x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
@@ -2051,11 +2056,15 @@ class Model(object):
 
         # Padding for passages, questions and answers.
         # The answers output are (1-label_smoothing)/len(x)
-        def padding(seq, max_size=None):  # for padding a batch
+        def padding(seq, max_size=None, toten_ID=None):  # for padding a batch
             seq_len = [len(seq[i]) for i in range(len(seq))]
             if max_size is None:
                 max_size = max(seq_len)
-            new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+            if toten_ID is None:
+                new_seq = [np.concatenate([np.array(seq[i]), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
+            else:
+                max_size = max_size+len(toten_ID)
+                new_seq = [np.concatenate([np.array(seq[i]), np.array(toten_ID), np.zeros([max_size-len(seq[i])])], axis=0) for i in range(len(seq))]
             return np.int_(new_seq)
 
         def padding_answer(seq, y1, y2, label_smoothing, max_size=None):
@@ -2164,14 +2173,16 @@ class Model(object):
             y2.append([y[1]-1 for y in yi])
         self.answer = [y1, y2]
         # Padding
+        toten_ID_begin = 1 + self.config['pre']['number_of_unk']
+        toten_ID_end = toten_ID_begin + self.config['model']['number_of_totens']
         if self.config['train']['check_available_memory']:
             x, y1_new, y2_new = padding_answer(x, y1, y2,
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
-            q = padding(q, max_size=self.config['pre']['max_question_size'])
+            q = padding(q, max_size=self.config['pre']['max_question_size'], toten_ID = list(range(toten_ID_begin, toten_ID_end)))
         else:
             x, y1_new, y2_new = padding_answer(x, y1, y2, label_smoothing=label_smoothing)
-            q = padding(q)
+            q = padding(q, toten_ID = list(range(toten_ID_begin, toten_ID_end)))
 
         if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])

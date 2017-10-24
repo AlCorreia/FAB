@@ -15,7 +15,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": false,
+		"run": true,
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
@@ -72,10 +72,11 @@
 		"encoder_initial_step":500,
 		"encode_char_and_vec_separately":false,
                 "encoder_scaling":false,
-		"one_layer_reduction":false,
+		"one_layer_reduction":true,
 		"reduced_layer_dropout_amplification":1.0,
-		"second_loss":true,
-		"y1_sel":"single_conv",
+		"second_loss":false,
+		"number_of_totens":1,
+		"y1_sel":"double_conv",
         	"y2_sel":"linear"
 	},
 	"train":{

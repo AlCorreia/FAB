@@ -258,16 +258,17 @@ def read_data(config, data_type, data_filter=None, data_train=None):
             word_counter = shared['word_counter']
         char2vec_dict = {}
         number_of_unk = config['pre']['number_of_unk']
+        number_of_totens = config['model']['number_of_totens']
         char_counter = shared['char_counter']
     #WORD PRE-PROCESSING
         if config['pre']['finetune']: #false
-            shared['unk_word2idx'] = {word: idx + 1 + number_of_unk for idx, word in
+            shared['unk_word2idx'] = {word: idx + 1 + number_of_unk + number_of_totens for idx, word in
                               enumerate(word for word, count in word_counter.items()
                                             if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
         else:
             assert config['pre']['known_if_glove']
             assert config['pre']['use_glove_for_unk']
-            shared['unk_word2idx'] = {word: idx + 1+number_of_unk for idx, word in #add 2 to UNK and NULL
+            shared['unk_word2idx'] = {word: idx + 1+number_of_unk + number_of_totens for idx, word in #add 2 to UNK and NULL
                                   enumerate(word for word, count in word_counter.items()
                                             if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
 
@@ -283,9 +284,12 @@ def read_data(config, data_type, data_filter=None, data_train=None):
 
         NULL = "-NULL-"
         UNK = "-UNK-"
+        TOTEN = "-TOTEN-"
         shared['unk_word2idx'][NULL] = 0
         for i in range(number_of_unk):
             shared['unk_word2idx'][UNK+str(i)] = i+1
+        for i in range(number_of_totens):
+            shared['unk_word2idx'][TOTEN+str(i)] = i + (number_of_unk+1)
         shared['unk_char2idx'][NULL] = 0
         shared['unk_char2idx'][UNK] = 1
 
