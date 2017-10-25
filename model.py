@@ -1749,10 +1749,11 @@ class Model(object):
                                 tf.sign(
                                     tf.matmul(tf.expand_dims(self.q, -1),
                                               tf.ones([self.Bs, 1, config['model']['memory_size']], tf.int32))), tf.float32)
-                q_scaled = self._attention_layer(X1=M_batch, X2=q_scaled,
-                                                 mask=mask['Mq'],
-                                                 scope='MQ',
-                                                 comp_size=self.q_comp_size)
+                qM = self._attention_layer(X1=M_batch, X2=q_scaled,
+                                           mask=mask['Mq'],
+                                           scope='MQ',
+                                           comp_size=self.q_comp_size)
+                q_scaled = self._layer_normalization(qM+q_scaled, scope='memory_norm')
 
         # Computing following layers after encoder
         q = [q_scaled]
