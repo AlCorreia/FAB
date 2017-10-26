@@ -745,6 +745,9 @@ class Model(object):
                                      strides=1,
                                      reuse=reuse,
                                      name='Att_Comp_X4'))
+                X4_final = tf.nn.dropout(
+                    X4_final,
+                    keep_prob=self.keep_prob_attention)
 
 
             # Add Dropout
