@@ -1282,6 +1282,28 @@ class Model(object):
 
         return output1, logits1, output2, logits2
 
+    def _all_layers_sel(self, Q, X, mask, scope):
+        with tf.variable_scope(scope):
+            yp1_vec = []
+            yp2_vec = []
+            logits_y1_vec = []
+            logits_y2_vec = []
+            for i in range(len(X)):
+                yp, logits_y1, yp2, logits_y2 = self._double_conv(
+                X=X[i],
+                mask=mask,
+                scope='sel_layer_'+str(i))
+                yp1_vec.append(tf.expand_dims(yp,1))
+                yp2_vec.append(tf.expand_dims(yp2,1))
+                logits_y1_vec.append(tf.expand_dims(logits_y1,1))
+                logits_y2_vec.append(tf.expand_dims(logits_y2,1))
+            yp1_out = tf.reduce_mean(tf.concat(yp1_vec,1),1)
+            yp2_out = tf.reduce_mean(tf.concat(yp2_vec,1),1)
+            logits_y1_out = tf.reduce_mean(tf.concat(logits_y1_vec,1),1)
+            logits_y2_out = tf.reduce_mean(tf.concat(logits_y2_vec,1),1)
+
+        return yp1_out, logits_y1_out, yp2_out, logits_y2_out
+
     def _second_loss(self, X, mask, scope):
         """
         Apply a sigmoid to define the probability of selecting each word
@@ -1765,6 +1787,11 @@ class Model(object):
         elif config['model']['y1_sel'] == "cross":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._cross_sel(Q=q[-1],
                 X=x[-1],
+                mask=mask,
+                scope='y1_y2_sel')
+        elif config['model']['y1_sel'] == "all_layers":
+            self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._all_layers_sel(Q=q,
+                X=x,
                 mask=mask,
                 scope='y1_y2_sel')
         else:
