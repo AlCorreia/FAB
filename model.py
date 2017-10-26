@@ -758,6 +758,23 @@ class Model(object):
         else:
             return x_final
 
+    def _proc_cross_layer(self, X, scope, comp_size):
+        with tf.variable_scope(scope):
+            length_X = X.get_shape()[1]
+            X = tf.expand_dims(X, 2)
+            X.set_shape([self.Bs, length_X, 1, comp_size[2]])
+            X_scaled = tf.squeeze(tf.layers.conv2d(X,
+                                                 filters=self.config['model']['number_of_cross_attentions'],
+                                                 kernel_size=1,
+                                                 strides=1,
+                                                 kernel_initializer=self.initializer,
+                                                 use_bias=self.config['model_options']['use_bias'],
+                                                 name='cross_prepare'))
+            X = tf.squeeze(X)
+            X.set_shape([self.Bs, length_X, self.WEAs])
+            X_prod=tf.matmul(tf.nn.softmax(tf.transpose(X_scaled,[0,2,1]),-1),X)
+        return X_prod
+
     def _layer_normalization(self, x, scope=None, shape=None):
         if shape is None:
             shape = self.WEAs
@@ -828,13 +845,13 @@ class Model(object):
             X1_comp_size = X_Cs
             X2 = Q
             X2_comp_size = Q_Cs
-            X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq'
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
         else:
             X1 = Q
             X1_comp_size = Q_Cs
             X2 = X
             X2_comp_size = X_Cs
-            X1X1, X2X2, X2X1, X1X2 = 'qq', 'xx', 'xq', 'qx'
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
         with tf.variable_scope(scope):
             if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                 #An encoder for char and word are defined separetely
@@ -890,12 +907,18 @@ class Model(object):
                                 shape=X2_comp_size[0])
             X2_enc_out = self._layer_normalization(X2_enc_out+X2_enc_red, scope='norm_Encoder'+X2X2,shape=out_size)
 
+            if self.config['model']['number_of_cross_attentions']>0:
+                cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
+                mask_X2X1 = tf.expand_dims(mask[X2_v],2)
+            else:
+                cross_out_X1 = FF_X1X1
+                mask_X2X1 = mask[X2X1]
             att_layer_X1X2 = self._layer_normalization(
                                 tf.add(att_layer_X2X2,
                                        self._attention_layer(
-                                                       X1=FF_X1X1,
+                                                       X1=cross_out_X1,
                                                        X2=att_layer_X2X2,
-                                                       mask=mask[X2X1],
+                                                       mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
                                                        dropout=self.config['model']['reduced_layer_dropout_amplification'])),
@@ -954,13 +977,13 @@ class Model(object):
             X1_comp_size = self.x_comp_size
             X2 = Q
             X2_comp_size = self.q_comp_size
-            X1X1, X2X2, X2X1, X1X2 = 'xx', 'qq', 'qx', 'xq'
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
         else:
             X1 = Q
             X1_comp_size = self.q_comp_size
             X2 = X
             X2_comp_size = self.x_comp_size
-            X1X1, X2X2, X2X1, X1X2 = 'qq', 'xx', 'xq', 'qx'
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
         with tf.variable_scope(scope):
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
@@ -984,13 +1007,18 @@ class Model(object):
                                                        scope=X2X2,
                                                        comp_size=X2_comp_size)),
                                 scope='norm_' + X2X2)
-
+            if self.config['model']['number_of_cross_attentions']>0:
+                cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
+                mask_X2X1 = tf.expand_dims(mask[X2_v],2)
+            else:
+                cross_out_X1 = FF_X1X1
+                mask_X2X1 = mask[X2X1]
             att_layer_X1X2 = self._layer_normalization(
                                 tf.add(att_layer_X2X2,
                                        self._attention_layer(
-                                                       X1=FF_X1X1,
+                                                       X1=cross_out_X1,
                                                        X2=att_layer_X2X2,
-                                                       mask=mask[X2X1],
+                                                       mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size)),
                                 scope='norm_'+X1X2)
