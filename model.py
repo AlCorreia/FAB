@@ -474,8 +474,7 @@ class Model(object):
             # Compute the encoder values
             if self.config['train']['moving_encoder_regularization']:
                 #Generates a random phase for sin and cosin
-                random_steps = freq_PG * tf.random_uniform(
-                                                           shape = [1],
+                random_steps = freq_PG * tf.random_uniform(shape=[1],
                                                            minval=-self.config['model']['encoder_high_freq']*2*np.pi,
                                                            maxval=+self.config['model']['encoder_high_freq']*2*np.pi)
                 #If it is not training, this random phase is not generated to make it deterministic
@@ -623,25 +622,25 @@ class Model(object):
                 X2.set_shape([self.Bs, length_X2, comp_size[2]])
                 #X1 Processing
                 K = tf.squeeze(tf.layers.conv2d(X1,
-                                                 filters=comp_size[1],
-                                                 kernel_size=1,
-                                                 strides=1,
-                                                 kernel_initializer=self.initializer,
-                                                 use_bias=self.config['model_options']['use_bias'],
-                                                 reuse=reuse,
-                                                 name='K_Comp'))
+                                                filters=comp_size[1],
+                                                kernel_size=1,
+                                                strides=1,
+                                                kernel_initializer=self.initializer,
+                                                use_bias=self.config['model_options']['use_bias'],
+                                                reuse=reuse,
+                                                name='K_Comp'))
                 # X3 Processing
                 length_X3 = X3.get_shape()[1]
                 X3 = tf.expand_dims(X3, 2)
                 X3.set_shape([self.Bs, length_X3, 1, comp_size[2]])
                 V = tf.squeeze(tf.layers.conv2d(X3,
-                                                 filters=comp_size[1],
-                                                 kernel_size=1,
-                                                 strides=1,
-                                                 kernel_initializer=self.initializer,
-                                                 use_bias=self.config['model_options']['use_bias'],
-                                                 reuse=reuse,
-                                                 name='V_Comp'))
+                                                filters=comp_size[1],
+                                                kernel_size=1,
+                                                strides=1,
+                                                kernel_initializer=self.initializer,
+                                                use_bias=self.config['model_options']['use_bias'],
+                                                reuse=reuse,
+                                                name='V_Comp'))
                 X3 = tf.squeeze(X3)
                 X3.set_shape([self.Bs, length_X3, comp_size[2]])
             X1 = tf.squeeze(X1)
@@ -1167,6 +1166,31 @@ class Model(object):
 
         return Q, X
 
+    def _memory_layer(self, q):
+        M_size = self.config['model']['memory_size']
+        with tf.variable_scope("memory"):
+            # Create the memory cells
+            M = tf.get_variable(
+                "M",
+                dtype=tf.float32,
+                shape=(1, M_size, self.WEAs),
+                initializer=self.initializer)
+            # Tile up the memory cells
+            # we need a copy for each example in the batch
+            M_batch = tf.tile(M, [self.Bs, 1, 1])
+            mask = tf.cast(
+                      tf.sign(
+                          tf.matmul(tf.expand_dims(self.q, -1),
+                                    tf.ones([self.Bs, 1, M_size], tf.int32))), tf.float32)
+            qM = self._attention_layer(X1=M_batch, X2=q,
+                                       mask=mask,
+                                       scope='qM',
+                                       comp_size=self.q_comp_size)
+            qM = self._layer_normalization(qM+q, scope='norm_memory')
+
+        return qM
+
+
     def _linear_sel(self, X, mask, scope):
         """ Select one vector among n vectors by max(w*X) """
         #length_X = X.get_shape()[1]
@@ -1323,18 +1347,17 @@ class Model(object):
             logits_y1_vec = []
             logits_y2_vec = []
             for i in range(len(X)):
-                yp, logits_y1, yp2, logits_y2 = self._double_conv(
-                X=X[i],
-                mask=mask,
-                scope='sel_layer_'+str(i))
-                yp1_vec.append(tf.expand_dims(yp,1))
-                yp2_vec.append(tf.expand_dims(yp2,1))
-                logits_y1_vec.append(tf.expand_dims(logits_y1,1))
-                logits_y2_vec.append(tf.expand_dims(logits_y2,1))
-            yp1_out = tf.reduce_mean(tf.concat(yp1_vec,1),1)
-            yp2_out = tf.reduce_mean(tf.concat(yp2_vec,1),1)
-            logits_y1_out = tf.reduce_mean(tf.concat(logits_y1_vec,1),1)
-            logits_y2_out = tf.reduce_mean(tf.concat(logits_y2_vec,1),1)
+                yp, logits_y1, yp2, logits_y2 = self._double_conv(X=X[i],
+                                                                  mask=mask,
+                                                                  scope='sel_layer_'+str(i))
+                yp1_vec.append(tf.expand_dims(yp, 1))
+                yp2_vec.append(tf.expand_dims(yp2, 1))
+                logits_y1_vec.append(tf.expand_dims(logits_y1, 1))
+                logits_y2_vec.append(tf.expand_dims(logits_y2, 1))
+            yp1_out = tf.reduce_mean(tf.concat(yp1_vec, 1), 1)
+            yp2_out = tf.reduce_mean(tf.concat(yp2_vec, 1), 1)
+            logits_y1_out = tf.reduce_mean(tf.concat(logits_y1_vec, 1), 1)
+            logits_y2_out = tf.reduce_mean(tf.concat(logits_y2_vec, 1), 1)
 
         return yp1_out, logits_y1_out, yp2_out, logits_y2_out
 
@@ -1695,7 +1718,7 @@ class Model(object):
                         initializer=self.config['model']['emb_mat_unk_chars'])  # [CVs,CEs]:
                     char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
                                          axis=0)
-                else: #There are not pre-trained characters.
+                else:  # There are not pre-trained characters
                     char_emb_mat = tf.get_variable(
                         "char_emb_mat",
                         dtype=tf.float32,
@@ -1747,28 +1770,29 @@ class Model(object):
                                                    tf.expand_dims(self.x_mask, 2),
                                                    tf.float32),keep_prob=self.keep_prob_word_passage))
 
-
+        if config['model']['memory']:
+            q_scaled = self._memory_layer(q_scaled)
         # Encoding Variables
         if config['model']['time_encoding']:
             with tf.variable_scope("Encoding"):
                 if self.config['model']['one_layer_reduction']:
                     WEAs_reduct = self.WEOs+self.COs
                     FFHs_reduct = WEAs_reduct*2
-                    Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs, self.WEAs]#size of q attention model/q processing size/size of x attention model/number of heads/output_size of X4
+                    Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs, self.WEAs]  # size of q attention model/q processing size/size of x attention model/number of heads/output_size of X4
                     X_Cs = Q_Cs
                     q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs) #It is already encoded
 
                 elif ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
-                    #An encoder for char and word are defined separetely
+                    # An encoder for char and word are defined separetely
                     x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
                     q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis=2)
                     with tf.variable_scope("encode_word"):
                         x_word_enc, q_word_enc = self._encoder(x_word, q_word, self.WEOs)
                     with tf.variable_scope("encode_char"):
                         x_char_enc, q_char_enc = self._encoder(x_char, q_char, self.COs)
-                    x_scaled = tf.concat([x_word_enc,x_char_enc], axis=2)
-                    q_scaled = tf.concat([q_word_enc,q_char_enc], axis=2)
-                else:  #An encoder for char and word are defined together
+                    x_scaled = tf.concat([x_word_enc, x_char_enc], axis=2)
+                    q_scaled = tf.concat([q_word_enc, Acq_wordq_char_enc], axis=2)
+                else:  # An encoder for char and word are defined together
                     x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEAs)
 
         # TO BE DELETED
@@ -1791,24 +1815,6 @@ class Model(object):
             layer_func = self._one_layer
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
-
-        if config['model']['memory']:
-            with tf.variable_scope("memory"):
-                M = tf.get_variable(
-                    "M",
-                    dtype=tf.float32,
-                    shape=(1, config['model']['memory_size'], self.WEs),
-                    initializer=self.initializer)
-                M_batch = tf.tile(M, [self.Bs, 1, 1])
-                mask['Mq'] = tf.cast(
-                                tf.sign(
-                                    tf.matmul(tf.expand_dims(self.q, -1),
-                                              tf.ones([self.Bs, 1, config['model']['memory_size']], tf.int32))), tf.float32)
-                qM = self._attention_layer(X1=M_batch, X2=q_scaled,
-                                           mask=mask['Mq'],
-                                           scope='MQ',
-                                           comp_size=self.q_comp_size)
-                q_scaled = self._layer_normalization(qM+q_scaled, scope='memory_norm')
 
         # Computing following layers after encoder
         q = [q_scaled]
