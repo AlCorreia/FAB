@@ -70,12 +70,12 @@ class Model(object):
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
-        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs] #size of x attention model/x processing size/size of q attention mode/multi-head size
+        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs, self.WEAs] #size of x attention model/x processing size/size of q attention mode/multi-head size/X4 size in attention
         self.q_reduction = config['model']['q_variables_reduction']
         q_MHs = int(config['model']['q_multi_head_size'])
         q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/q_MHs)*q_MHs)
         q_FFHs = int(self.FFHs*self.q_reduction)
-        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs, q_MHs]#size of q attention model/q processing size/size of x attention model
+        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs, q_MHs, self.WEAs]#size of q attention model/q processing size/size of x attention model/ size o Feedforward number of heads/ X4 size in attention
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
@@ -961,9 +961,100 @@ class Model(object):
             output_1 = tf.squeeze(output_1, 1)
             output_2 = tf.squeeze(output_2, 1)
             output_1.set_shape([self.Bs, length_X1, out_size])
-            output_1 = output_1+X1_enc_out
+            output_1 = [X1_enc_out, output_1]
             output_2.set_shape([self.Bs, length_X2, out_size])
-            output_2 = output_2+X2_enc_out
+            output_2 = [X2_enc_out, output_2]
+            if switch:
+                return output_2, output_1
+            else:
+                return output_1, output_2
+
+    def _one_layer_split_enc_emb(self, Q, X, mask, scope, switch=False):
+        # Defining masks and scopes
+        if switch:
+            X1 = X
+            X1_comp_size = self.x_comp_size
+            X2 = Q
+            X2_comp_size = self.q_comp_size
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
+        else:
+            X1 = Q
+            X1_comp_size = self.q_comp_size
+            X2 = X
+            X2_comp_size = self.x_comp_size
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
+        with tf.variable_scope(scope):
+            X1_enc, X1_emb = X1
+            X2_enc, X2_emb = X2
+            X1_emb_enc = X1_enc + X1_emb
+            X2_emb_enc = X2_enc + X2_emb
+            att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_emb_enc, X2=X1_emb_enc, X3=X1_emb, X4=X1_enc,
+                                                       mask=mask[X1X1],
+                                                       scope='X1X1',
+                                                       comp_size=X1_comp_size,
+                                                       reuse=False,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
+            att_layer_X1X1 = self._layer_normalization(
+                                tf.add(X1_emb_enc,
+                                       att_layer_X1X1_out),
+                                scope='norm_'+X1X1,
+                                shape=X1_comp_size[0])
+
+            X1_enc_out = self._layer_normalization(X1_enc_out+X1_enc, scope='norm_Encoder'+X1X1,shape=X1_comp_size[0])
+
+            FF_X1X1 = self._layer_normalization(
+                                    tf.add(att_layer_X1X1,
+                                           self._FeedForward_NN(att_layer_X1X1,
+                                                          'FF' + X1X1,
+                                                           comp_size=X1_comp_size,
+                                                           dropout=self.config['model']['reduced_layer_dropout_amplification'])),
+                                    scope='norm_FF_'+X1X1,
+                                    shape=X1_comp_size[0])
+
+            att_layer_X2X2_out, X2_enc_out = self._attention_layer(X1=X2_emb_enc, X2=X2_emb_enc, X3=X2_emb, X4=X2_enc,
+                                                       mask=mask[X2X2],
+                                                       scope='X2X2',
+                                                       comp_size=X2_comp_size,
+                                                       reuse=False,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
+
+            att_layer_X2X2 = self._layer_normalization(
+                                tf.add(X2_emb_enc,
+                                       att_layer_X2X2_out),
+                                scope='norm_'+X2X2,
+                                shape=X2_comp_size[0])
+            X2_enc_out = self._layer_normalization(X2_enc_out+X2_enc, scope='norm_Encoder'+X2X2,shape=X1_comp_size[0])
+
+            if self.config['model']['number_of_cross_attentions']>0:
+                cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
+                mask_X2X1 = tf.expand_dims(mask[X2_v],2)
+            else:
+                cross_out_X1 = FF_X1X1
+                mask_X2X1 = mask[X2X1]
+            att_layer_X1X2 = self._layer_normalization(
+                                tf.add(att_layer_X2X2,
+                                       self._attention_layer(
+                                                       X1=cross_out_X1,
+                                                       X2=att_layer_X2X2,
+                                                       mask=mask_X2X1,
+                                                       scope=X2X1,
+                                                       comp_size=X2_comp_size,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])),
+                                scope='norm_'+X2X1,
+                                shape=X2_comp_size[0])
+
+            FF_X2X2 = self._layer_normalization(
+                                    tf.add(att_layer_X1X2,
+                                           self._FeedForward_NN(att_layer_X1X2,
+                                                                'FF_' + X2X2,
+                                                                comp_size=X2_comp_size,
+                                                                dropout=self.config['model']['reduced_layer_dropout_amplification'])),
+                                    scope='norm_FF_' + X2X2,
+                                    shape=X2_comp_size[0])
+
+
+            output_1 = [X1_enc_out, FF_X1X1]
+            output_2 = [X2_enc_out, FF_X2X2]
             if switch:
                 return output_2, output_1
             else:
@@ -1797,7 +1888,13 @@ class Model(object):
                     x_scaled = tf.concat([x_word_enc, x_char_enc], axis=2)
                     q_scaled = tf.concat([q_word_enc, Acq_wordq_char_enc], axis=2)
                 else:  # An encoder for char and word are defined together
-                    x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEAs)
+                    len_q = tf.shape(self.q)[1]
+                    len_x = tf.shape(self.x)[1]
+                    q_enc = tf.zeros(shape=[self.Bs,len_q,self.WEAs], dtype=tf.float32)
+                    x_enc = tf.zeros(shape=[self.Bs,len_x,self.WEAs], dtype=tf.float32)
+                    x_enc, q_enc = self._encoder(x_enc, q_enc, self.WEAs)
+                    x_scaled = [x_enc, x_scaled]
+                    q_scaled = [q_enc, q_scaled]
 
         # TO BE DELETED
         # if self.WEAs != (self.WEOs+self.COs):
@@ -1813,20 +1910,27 @@ class Model(object):
         switch = (lambda i: (i%2 == 1)) if config['model_options']['switching_model'] else (lambda i: False)
         if config['model_options']['layer_type'] == 'symmetric':
             layer_func = self._one_layer_symmetric
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='symmetric_small':
             layer_func = self._one_layer_symmetric_small
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='original':
             layer_func = self._one_layer
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
-
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
+        elif config['model_options']['layer_type']=='split_emb_enc':
+            layer_func = self._one_layer_split_enc_emb
         # Computing following layers after encoder
-        q = [q_scaled]
-        x = [x_scaled]
+        q_i = q_scaled
+        x_i = x_scaled
+        q = [tf.add_n(q_i)]
+        x = [tf.add_n(x_i)]
         for i in range(num_layers_pre+num_layers_post):
-            q_i, x_i = layer_func(q[i], x[i], mask, 'layer_'+str(i), switch=switch(i))
-            q.append(q_i)
-            x.append(x_i)
+            q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
+            q.append(tf.add_n(q_i))
+            x.append(tf.add_n(x_i))
 
         if self.config['train']['dropout_last_layer_passage']<1.0:
             x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
