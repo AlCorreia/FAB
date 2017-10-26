@@ -682,6 +682,11 @@ class Model(object):
             Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4], tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
+            if X2 is not None and X3 is None:
+                dimension = 2
+            else:
+                dimension = -1
+
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
             if self.config['train']['dropout_attention_pre_softmax'] < 1.0:
                 # This is done to save memory if dropout is not used
@@ -689,13 +694,13 @@ class Model(object):
                     tf.add(
                         tf.divide(logits, Scaling),
                         tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
-                    dim=-1)
+                    dim=dimension)
             else:
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, Scaling),
                         tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
-                    dim=-1)
+                    dim=dimension)
             # Final mask is applied
             if self.config['train']['dropout_attention_post_softmax'] < 1.0:
                 # To normalize softmax sum to 1
