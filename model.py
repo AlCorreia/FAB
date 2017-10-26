@@ -517,18 +517,18 @@ class Model(object):
         # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
         if self.config['model']['number_of_totens']>0:
-            size_each_q = tf.cast(tf.expand_dims(tf.reduce_sum(self.q_mask, axis=1),1), tf.int32) #Compute size of each question
-            range_q = tf.expand_dims(tf.range(0, size_q, 1), 0) #generate range sequence
-            mask_encoder_q = tf.cast(tf.round(tf.cast(tf.greater(size_each_q-self.config['model']['number_of_totens'], range_q), tf.int32)), tf.float32) #Compute new mask without totens
-            encoder_q = tf.multiply(encoder_q, tf.expand_dims(mask_encoder_q,2)) #Compute masked encoder_q to not encode totens
+            size_each_q = tf.cast(tf.expand_dims(tf.reduce_sum(self.q_mask, axis=1),1), tf.int32)  # Compute size of each question
+            range_q = tf.expand_dims(tf.range(0, size_q, 1), 0)  # generate range sequence
+            mask_encoder_q = tf.cast(tf.round(tf.cast(tf.greater(size_each_q-self.config['model']['number_of_totens'], range_q), tf.int32)), tf.float32)  # Compute new mask without totens
+            encoder_q = tf.multiply(encoder_q, tf.expand_dims(mask_encoder_q,2))  # Compute masked encoder_q to not encode totens
         q_encoded = tf.add(Q, encoder_q)
-        if self.config['train']['dropout_encoder']<1.0: #This is done to save memory if dropout is not used
+        if self.config['train']['dropout_encoder']<1.0:  # This is done to save memory if dropout is not used
             x_encoded = tf.nn.dropout(x_encoded, keep_prob=self.keep_prob_encoder)
             q_encoded = tf.nn.dropout(q_encoded, keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
 
-     #to be deleted
+    # to be deleted
     # def _reduce_dimension(self, X, second=False):
     #    length_X = X.get_shape()[1]  # number of words in the passage
     #    with tf.variable_scope('reduce_dimension', reuse=second) as scope:
@@ -630,7 +630,7 @@ class Model(object):
                                                  use_bias=self.config['model_options']['use_bias'],
                                                  reuse=reuse,
                                                  name='K_Comp'))
-                #X3 Processing
+                # X3 Processing
                 length_X3 = X3.get_shape()[1]
                 X3 = tf.expand_dims(X3, 2)
                 X3.set_shape([self.Bs, length_X3, 1, comp_size[2]])
@@ -648,18 +648,18 @@ class Model(object):
             X1.set_shape([self.Bs, length_X1, self.WEAs])
 
             if X4 is not None:
-                #X3 Processing
+                # X3 Processing
                 length_X4 = X4.get_shape()[1]
                 X4 = tf.expand_dims(X4, 2)
                 X4.set_shape([self.Bs, length_X4, 1, comp_size[5]])
                 V_X4 = tf.squeeze(tf.layers.conv2d(X4,
-                                                 filters=comp_size[5],
-                                                 kernel_size=1,
-                                                 strides=1,
-                                                 kernel_initializer=self.initializer,
-                                                 use_bias=self.config['model_options']['use_bias'],
-                                                 reuse=reuse,
-                                                 name='V4_Comp'))
+                                                   filters=comp_size[5],
+                                                   kernel_size=1,
+                                                   strides=1,
+                                                   kernel_initializer=self.initializer,
+                                                   use_bias=self.config['model_options']['use_bias'],
+                                                   reuse=reuse,
+                                                   name='V4_Comp'))
                 X4 = tf.squeeze(X4)
                 X4.set_shape([self.Bs, length_X4, comp_size[2]])
                 V_X4 = tf.split(V_X4, num_or_size_splits=comp_size[4], axis=2)
@@ -679,25 +679,31 @@ class Model(object):
                 MHs = comp_size[4]
                 WEPs = comp_size[1]
             # Compute transpose of K for multiplyting Q*K^T
-            Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4],tf.float32))
+            Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4], tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
+            if X2 is not None and X3 is None:
+                dimension = 2
+            else:
+                dimension = -1
+
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
-            if self.config['train']['dropout_attention_pre_softmax'] < 1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_attention_pre_softmax'] < 1.0:
+                # This is done to save memory if dropout is not used
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, Scaling),
                         tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
-                    dim=-1)
+                    dim=dimension)
             else:
                 softmax = tf.nn.softmax(
                     tf.add(
                         tf.divide(logits, Scaling),
                         tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
-                    dim=-1)
+                    dim=dimension)
             # Final mask is applied
-            if self.config['train']['dropout_attention_post_softmax']<1.0:
-                # To normalize softmax sum to 1.
+            if self.config['train']['dropout_attention_post_softmax'] < 1.0:
+                # To normalize softmax sum to 1
                 softmax = 1/keep_prob_post_softmax*tf.nn.dropout(tf.multiply(mask, softmax), keep_prob_post_softmax)
             else:
                 softmax = tf.multiply(mask, softmax)
@@ -712,7 +718,7 @@ class Model(object):
                            num=MHs),
                 axis=2)
             x_attention_concat.set_shape([self.Bs, length_X2, int(WEPs)])
-            if self.config['train']['dropout_concat']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_concat']<1.0:  # This is done to save memory if dropout is not used
                 x_attention_concat = tf.nn.dropout(x_attention_concat, keep_prob=keep_prob_concat)
             # Compute softmax(Q*K^T)*V*WO
             x_final = tf.squeeze(
@@ -722,7 +728,7 @@ class Model(object):
                                  strides=1,
                                  name='Att_Comp'))
 
-            #X4 processing
+            # X4 processing
             if X4 is not None:
                 X4_attention = tf.matmul(softmax, V_X4)  # softmax(Q*K^T)*V
             # Concatenate everything together
@@ -743,7 +749,7 @@ class Model(object):
 
 
             # Add Dropout
-            if self.config['train']['dropout_attention']<1.0: #This is done to save memory if dropout is not used
+            if self.config['train']['dropout_attention']<1.0:  # This is done to save memory if dropout is not used
                 x_final = tf.nn.dropout(
                     x_final,
                     keep_prob=keep_prob_attention)
@@ -759,7 +765,7 @@ class Model(object):
             # Compute variance and means
             mean_val = tf.reduce_mean(x, axis=[-1])
             mean_val = tf.expand_dims(mean_val,axis=-1)
-            variance = 1e-8 + tf.reduce_mean(tf.square(x-mean_val),axis=[-1]) #1e-8 to avoid NaN
+            variance = 1e-8 + tf.reduce_mean(tf.square(x-mean_val),axis=[-1])  # 1e-8 to avoid NaN
             std_dev = tf.sqrt(variance)
             std_dev = tf.expand_dims(std_dev,axis=-1)
             normalized_x = tf.divide((x-mean_val),std_dev)
@@ -1737,8 +1743,8 @@ class Model(object):
                 else:  #An encoder for char and word are defined together
                     x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEAs)
 
-        #TO BE DELETED
-        #if self.WEAs != (self.WEOs+self.COs):
+        # TO BE DELETED
+        # if self.WEAs != (self.WEOs+self.COs):
         #    x_scaled = self._reduce_dimension(x_scaled)
         #    q_scaled = self._reduce_dimension(q_scaled, second=True)
 
@@ -1758,6 +1764,23 @@ class Model(object):
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
 
+        if config['model']['memory']:
+            with tf.variable_scope("memory"):
+                M = tf.get_variable(
+                    "M",
+                    dtype=tf.float32,
+                    shape=(1, config['model']['memory_size'], self.WEs),
+                    initializer=self.initializer)
+                M_batch = tf.tile(M, [self.Bs, 1, 1])
+                mask['Mq'] = tf.cast(
+                                tf.sign(
+                                    tf.matmul(tf.expand_dims(self.q, -1),
+                                              tf.ones([self.Bs, 1, config['model']['memory_size']], tf.int32))), tf.float32)
+                qM = self._attention_layer(X1=M_batch, X2=q_scaled,
+                                           mask=mask['Mq'],
+                                           scope='MQ',
+                                           comp_size=self.q_comp_size)
+                q_scaled = self._layer_normalization(qM+q_scaled, scope='memory_norm')
 
         # Computing following layers after encoder
         q = [q_scaled]

@@ -25,11 +25,11 @@ def get_word2vec(config, word_counter):
             if word in word_counter:
                 word2vec_dict[word] = vector
             elif word.capitalize() in word_counter:
-                word2vec_dict[word.capitalize()] = vector
+                word2vec_dict[word] = vector
             elif word.lower() in word_counter:
-                word2vec_dict[word.lower()] = vector
+                word2vec_dict[word] = vector
             elif word.upper() in word_counter:
-                word2vec_dict[word.upper()] = vector
+                word2vec_dict[word] = vector
 
     print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), glove_path))
     return word2vec_dict
@@ -200,8 +200,8 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # TODO: Add debug option as in the original code
             # if args.debug:
             #     break
-    
-    if config['glove']['corpus']=='6B':
+
+    if config['glove']['corpus'] == '6B':
         word2vec_dict = get_word2vec(config, word_counter_lower)
     else:
         word2vec_dict = get_word2vec(config, word_counter)
