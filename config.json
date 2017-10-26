@@ -79,6 +79,7 @@
 		"memory":false,
 		"memory_size":100,
 		"number_of_cross_attentions":0,
+		"inverse_softmax_cross_att": true,
 		"y1_sel":"double_conv",
         	"y2_sel":"linear"
 	},
