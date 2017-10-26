@@ -1187,6 +1187,10 @@ class Model(object):
                                        scope='qM',
                                        comp_size=self.q_comp_size)
             qM = self._layer_normalization(qM+q, scope='norm_memory')
+            qM = self._layer_normalization(qM + self._FeedForward_NN(qM,
+                                                                     'FF_qM',
+                                                                     comp_size=self.q_comp_size),
+                                           scope='norm_FF_memory')
 
         return qM
 
