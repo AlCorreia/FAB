@@ -1298,13 +1298,13 @@ class Model(object):
         return qM
 
 
-    def _linear_sel(self, X, mask, scope):
+    def _linear_sel(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         #length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            X.set_shape([self.Bs, length_X, 1, size_input])
             #X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
             logits = tf.layers.conv2d(X,
                                       filters=1,
@@ -1316,18 +1316,18 @@ class Model(object):
                                       name='conv_sel')
             logits = tf.reshape(logits, [self.Bs, -1])
             X = tf.squeeze(X)
-            X.set_shape([self.Bs, length_X, self.WEAs])
+            X.set_shape([self.Bs, length_X, size_input])
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _linear_sel_y2(self, X, y1_sel, mask, scope):
+    def _linear_sel_y2(self, X, y1_sel, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            X.set_shape([self.Bs, length_X, 1, size_input])
 
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
@@ -1345,17 +1345,17 @@ class Model(object):
                                       name='conv_sel')
             logits = tf.reshape(logits, [self.Bs, -1])
             X = tf.squeeze(X)
-            X.set_shape([self.Bs, length_X, self.WEAs])
+            X.set_shape([self.Bs, length_X, size_input])
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
-    def _conv_sel(self, X, mask, scope):
+    def _conv_sel(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=1,
                                       kernel_size=(7, 1),
@@ -1370,11 +1370,11 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _conv_sel_2(self, X, y1_sel, mask, scope):
+    def _conv_sel_2(self, X, y1_sel, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
 
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
@@ -1396,11 +1396,11 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
-    def _single_conv(self, X, mask, scope):
+    def _single_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=16,
                                       kernel_size=(1, 1),
@@ -1420,7 +1420,7 @@ class Model(object):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=32,
                                       kernel_size=(9, 1),
@@ -1447,7 +1447,7 @@ class Model(object):
 
         return output1, logits1, output2, logits2
 
-    def _all_layers_sel(self, Q, X, mask, scope):
+    def _all_layers_sel(self, Q, X, mask, scope, size_input):
         with tf.variable_scope(scope):
             yp1_vec = []
             yp2_vec = []
@@ -1456,7 +1456,8 @@ class Model(object):
             for i in range(len(X)):
                 yp, logits_y1, yp2, logits_y2 = self._double_conv(X=X[i],
                                                                   mask=mask,
-                                                                  scope='sel_layer_'+str(i))
+                                                                  scope='sel_layer_'+str(i),
+                                                                  size_input=size_input)
                 yp1_vec.append(tf.expand_dims(yp, 1))
                 yp2_vec.append(tf.expand_dims(yp2, 1))
                 logits_y1_vec.append(tf.expand_dims(logits_y1, 1))
@@ -1487,11 +1488,11 @@ class Model(object):
                                       name='second_loss')
         return tf.reshape(logits, [self.Bs, -1])
 
-    def _sym_double_conv(self, X, mask, scope):
+    def _sym_double_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=32,
                                       kernel_size=(9, 1),
@@ -1651,20 +1652,20 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _cross_sel(self, Q, X, mask, scope):
+    def _cross_sel(self, Q, X, mask, scope, size_input):
         """ Attention over attention for computing y1"""
         with tf.variable_scope(scope):
             length_Q = Q.get_shape()[1]
             Q = tf.expand_dims(Q, 2)
-            Q.set_shape([self.Bs, length_Q, 1, self.WEAs])
+            Q.set_shape([self.Bs, length_Q, 1, size_input])
             #Scale question matrix with a matrix W*Q
             Q_Scaled = tf.squeeze(tf.layers.conv2d(Q,
-                                              filters=self.WEAs,
+                                              filters=size_input,
                                               kernel_size=1,
                                               strides=1,
                                               name='W'))
             Q = tf.squeeze(Q)
-            Q.set_shape([self.Bs, length_Q, self.WEAs])
+            Q.set_shape([self.Bs, length_Q, size_input])
             logits = tf.matmul(Q_Scaled, tf.transpose(X, [0, 2, 1]))
             logits_mean = tf.reduce_mean(logits, 2, keep_dims=True)
             logits_std = tf.sqrt(1e-8+tf.reduce_mean(tf.square(logits-logits_mean),2, keep_dims=True))
@@ -1745,9 +1746,9 @@ class Model(object):
                 dim=-1)
         return softmax_y, logits_y
 
-    def _y_selection(self, Q, X, mask, scope, method="linear", y1_sel=None):
+    def _y_selection(self, Q, X, mask, scope, method="linear", y1_sel=None, size_input=None):
         if method == "linear":
-            output, logits = self._linear_sel(X, mask, scope)
+            output, logits = self._linear_sel(X, mask, scope, size_input)
         elif method == "split_layer":
             output, logits = self._split_layer_sel(Q, X, mask, scope)
         elif method == "AoA":
@@ -1755,11 +1756,11 @@ class Model(object):
         elif method == "cross":
             output, logits = self._cross_sel(Q, X, mask, scope)
         elif method == "linear_y2":
-            output, logits = self._linear_sel_y2(X, y1_sel, mask, scope)
+            output, logits = self._linear_sel_y2(X, y1_sel, mask, scope, size_input)
         elif method == "conv":
-            output, logits = self._conv_sel(X, mask, scope)
+            output, logits = self._conv_sel(X, mask, scope, size_input)
         elif method == "conv2":
-            output, logits = self._conv_sel_2(X, y1_sel, mask, scope)
+            output, logits = self._conv_sel_2(X, y1_sel, mask, scope, size_input)
         elif method == "direct":
             output, logits = self._direct(X, mask, scope)
         elif method == "direct2":
@@ -1938,16 +1939,18 @@ class Model(object):
         q_i = q_scaled
         x_i = x_scaled
         if config['model_options']['layer_type']=='split_emb_enc':
-            q = [tf.add_n(q_i)]
-            x = [tf.add_n(x_i)]
+            size_input = 2*self.WEAs
+            q = [tf.concat(q_i,2)]
+            x = [tf.concat(x_i,2)]
         else:
+            size_input = self.WEAs
             q = [q_i]
             x = [x_i]
         for i in range(num_layers_pre+num_layers_post):
             q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
             if config['model_options']['layer_type']=='split_emb_enc':
-                q.append(tf.add_n(q_i))
-                x.append(tf.add_n(x_i))
+                q.append(tf.concat(q_i,2))
+                x.append(tf.concat(x_i,2))
             else:
                 q.append(q_i)
                 x.append(x_i)
@@ -1957,27 +1960,32 @@ class Model(object):
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._single_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "double_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._double_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "sym_double_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._sym_double_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "cross":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._cross_sel(Q=q[-1],
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input=size_input)
         elif config['model']['y1_sel'] == "all_layers":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._all_layers_sel(Q=q,
                 X=x,
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         else:
             # Computing outputs
             self.yp, self.logits_y1 = self._y_selection(
@@ -1985,14 +1993,16 @@ class Model(object):
                                                   X=x[-1-num_layers_post],
                                                   mask=mask,
                                                   scope='y1_sel',
-                                                  method=config['model']['y1_sel'])
+                                                  method=config['model']['y1_sel'],
+                                                  size_input=size_input)
             self.yp2, self.logits_y2 = self._y_selection(
                                                    Q=q[-1],
                                                    X=x[-1],
                                                    mask=mask,
                                                    scope='y2_sel',
                                                    method=config['model']['y2_sel'],
-                                                   y1_sel=self.yp)
+                                                   y1_sel=self.yp,
+                                                   size_input=size_input)
         self.Start_Index = tf.argmax(self.yp, axis=-1)
         self.End_Index = tf.argmax(self.yp2, axis=-1)
 
