@@ -1416,7 +1416,7 @@ class Model(object):
             output1, output2 = self._process_logits(logits1, logits2, mask)
         return output1, logits1, output2, logits2
 
-    def _double_conv(self, X, mask, scope):
+    def _double_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
