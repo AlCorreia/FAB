@@ -70,12 +70,12 @@ class Model(object):
         self.WEPs = config['model']['process_emb_size']  # Word-embedding attention size for attention and feed-forward sublayers
         self.Hn = config['model']['n_hidden']  # Number of hidden units in the LSTM cell
 
-        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs] #size of x attention model/x processing size/size of q attention mode/multi-head size
+        self.x_comp_size = [self.WEAs, self.WEPs, self.WEAs, self.FFHs, self.MHs, self.WEAs] #size of x attention model/x processing size/size of q attention mode/multi-head size/X4 size in attention
         self.q_reduction = config['model']['q_variables_reduction']
         q_MHs = int(config['model']['q_multi_head_size'])
         q_WEPs = int(np.ceil(self.WEPs*self.q_reduction/q_MHs)*q_MHs)
         q_FFHs = int(self.FFHs*self.q_reduction)
-        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs, q_MHs]#size of q attention model/q processing size/size of x attention model
+        self.q_comp_size = [self.WEAs, q_WEPs, self.WEAs, q_FFHs, q_MHs, self.WEAs]#size of q attention model/q processing size/size of x attention model/ size o Feedforward number of heads/ X4 size in attention
         # Define placeholders
         # TODO: Include characters
         self.is_training = tf.placeholder(tf.bool, name='is_training')
@@ -549,7 +549,7 @@ class Model(object):
     #                                        name="conv2d"))  # XW
     #    return X
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, inverse=False):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         keep_prob_attention = tf.pow(self.keep_prob_attention,dropout)
         keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
@@ -681,10 +681,10 @@ class Model(object):
             Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4], tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
-            if X2 is not None and X3 is None:
+            if inverse: #Softmax direction is changed
                 dimension = 2
             else:
-                dimension = -1
+                dimension = 3
 
             # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
             if self.config['train']['dropout_attention_pre_softmax'] < 1.0:
@@ -745,6 +745,9 @@ class Model(object):
                                      strides=1,
                                      reuse=reuse,
                                      name='Att_Comp_X4'))
+                X4_final = tf.nn.dropout(
+                    X4_final,
+                    keep_prob=self.keep_prob_attention)
 
 
             # Add Dropout
@@ -774,10 +777,10 @@ class Model(object):
             X_prod=tf.matmul(tf.nn.softmax(tf.transpose(X_scaled,[0,2,1]),-1),X)
         return X_prod
 
-    def _layer_normalization(self, x, scope=None, shape=None):
+    def _layer_normalization(self, x, scope=None, shape=None, reuse=False):
         if shape is None:
             shape = self.WEAs
-        with tf.variable_scope(scope):
+        with tf.variable_scope(scope, reuse=reuse):
             # Compute variance and means
             mean_val = tf.reduce_mean(x, axis=[-1])
             mean_val = tf.expand_dims(mean_val,axis=-1)
@@ -799,11 +802,11 @@ class Model(object):
                 normalized_x = normalized_x * W_Scale + b_Scale
         return normalized_x
 
-    def _FeedForward_NN(self, X, scope=None, comp_size=None, dropout=1.0):
+    def _FeedForward_NN(self, X, scope=None, comp_size=None, dropout=1.0, reuse=False):
         keep_prob_relu_func = tf.pow(self.keep_prob_Relu,dropout)  #If dropout greater than 2.0, than a original dropout of 0.9 is reduced to 0.81
         keep_prob_FF_func = tf.pow(self.keep_prob_FF, dropout)
         # Starting variables
-        with tf.variable_scope(scope):
+        with tf.variable_scope(scope, reuse=reuse):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
             X.set_shape([self.Bs, length_X, 1, comp_size[0]])
@@ -816,7 +819,8 @@ class Model(object):
                                          use_bias=True,
                                          activation=tf.nn.relu,
                                          kernel_initializer=self.initializer,
-                                         name='affine_op_1')
+                                         name='affine_op_1',
+                                         reuse=reuse)
             if self.config['train']['dropout_Relu'] < 1.0:  # This is done to save memory if dropout is not used
                 affine_op = tf.nn.dropout(affine_op, keep_prob=keep_prob_relu_func)
             X = tf.squeeze(X)
@@ -829,7 +833,8 @@ class Model(object):
                                                  strides=1,
                                                  use_bias=True,
                                                  kernel_initializer=self.initializer,
-                                                 name='affine_op_2'))
+                                                 name='affine_op_2',
+                                                 reuse=reuse))
             # Apply Dropout
             if self.config['train']['dropout_FF']<1.0: #This is done to save memory if dropout is not used
                 output = tf.nn.dropout(
@@ -920,7 +925,8 @@ class Model(object):
                                                        mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
-                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])),
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'],
+                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
                                 scope='norm_'+X2X1,
                                 shape=X2_comp_size[0])
 
@@ -961,9 +967,105 @@ class Model(object):
             output_1 = tf.squeeze(output_1, 1)
             output_2 = tf.squeeze(output_2, 1)
             output_1.set_shape([self.Bs, length_X1, out_size])
-            output_1 = output_1+X1_enc_out
+            output_1 = [X1_enc_out, output_1]
             output_2.set_shape([self.Bs, length_X2, out_size])
-            output_2 = output_2+X2_enc_out
+            output_2 = [X2_enc_out, output_2]
+            if switch:
+                return output_2, output_1
+            else:
+                return output_1, output_2
+
+    def _one_layer_split_enc_emb(self, Q, X, mask, scope, switch=False):
+        # Defining masks and scopes
+        if switch:
+            X1 = X
+            X1_comp_size = self.x_comp_size
+            X2 = Q
+            X2_comp_size = self.q_comp_size
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
+        else:
+            X1 = Q
+            X1_comp_size = self.q_comp_size
+            X2 = X
+            X2_comp_size = self.x_comp_size
+            X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
+        with tf.variable_scope(scope):
+            X1_enc, X1_emb = X1
+            X2_enc, X2_emb = X2
+            weight_1 = tf.get_variable("weight_enc_emb_X1", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            weight_2 = tf.get_variable("weight_enc_emb_X2", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            weight_3 = tf.get_variable("weight_enc_emb_X3", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            sig_weight_1 = tf.sigmoid(weight_1)
+            sig_weight_2 = tf.sigmoid(weight_2)
+            sig_weight_3 = tf.sigmoid(weight_3)
+            X1_emb_enc = X1_enc*sig_weight_1 + X1_emb*(1-sig_weight_1)
+            X2_emb_enc = X2_enc*sig_weight_2 + X2_emb*(1-sig_weight_2)
+            att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_emb_enc, X2=X1_emb_enc, X3=X1_emb, X4=X1_enc,
+                                                       mask=mask[X1X1],
+                                                       scope='X1X1',
+                                                       comp_size=X1_comp_size,
+                                                       reuse=False,
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
+            att_layer_X1X1 = self._layer_normalization(
+                                tf.add(X1_emb_enc,
+                                       att_layer_X1X1_out),
+                                scope='norm_'+X1X1,
+                                shape=X1_comp_size[0])
+
+            X1_enc_out = self._layer_normalization(X1_enc_out+X1_enc, scope='norm_Encoder'+X1X1,shape=X1_comp_size[0])
+
+            FF_X1X1 = self._layer_normalization(
+                                    tf.add(att_layer_X1X1,
+                                           self._FeedForward_NN(att_layer_X1X1,
+                                                          'FF' + X1X1,
+                                                           comp_size=X1_comp_size,
+                                                           reuse=False)),
+                                    scope='norm_FF_'+X1X1,
+                                    shape=X1_comp_size[0])
+
+
+            att_layer_X2X2_out, X2_enc_out = self._attention_layer(X1=X2_emb_enc, X2=X2_emb_enc, X3=X2_emb, X4=X2_enc,
+                                                       mask=mask[X2X2],
+                                                       scope='X2X2',
+                                                       comp_size=X2_comp_size,
+                                                       reuse=False)
+
+            att_layer_X2X2 = self._layer_normalization(
+                                tf.add(X2_emb_enc,
+                                       att_layer_X2X2_out),
+                                scope='norm_'+X2X2,
+                                shape=X2_comp_size[0])
+            X2_enc_out = self._layer_normalization(X2_enc_out+X2_enc, scope='norm_Encoder'+X2X2,shape=X1_comp_size[0])
+
+            if self.config['model']['number_of_cross_attentions']>0:
+                cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
+                mask_X2X1 = tf.expand_dims(mask[X2_v],2)
+            else:
+                cross_out_X1 = FF_X1X1
+                mask_X2X1 = mask[X2X1]
+            att_layer_X1X2 = self._layer_normalization(
+                                tf.add(att_layer_X2X2,
+                                       self._attention_layer(
+                                                       X1=cross_out_X1,
+                                                       X2=att_layer_X2X2,
+                                                       X3=cross_out_X1*(sig_weight_3)+X1_enc_out*(1-sig_weight_3),
+                                                       mask=mask_X2X1,
+                                                       scope=X2X1,
+                                                       comp_size=X2_comp_size,
+                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
+                                scope='norm_'+X2X1,
+                                shape=X2_comp_size[0])
+
+            FF_X2X2 = self._layer_normalization(
+                                    tf.add(att_layer_X1X2,
+                                           self._FeedForward_NN(att_layer_X1X2,
+                                                                'FF_' + X2X2,
+                                                                comp_size=X2_comp_size)),
+                                    scope='norm_FF_' + X2X2,
+                                    shape=X2_comp_size[0])
+
+            output_1 = [X1_enc_out, FF_X1X1]
+            output_2 = [X2_enc_out, FF_X2X2]
             if switch:
                 return output_2, output_1
             else:
@@ -1019,7 +1121,8 @@ class Model(object):
                                                        X2=att_layer_X2X2,
                                                        mask=mask_X2X1,
                                                        scope=X2X1,
-                                                       comp_size=X2_comp_size)),
+                                                       comp_size=X2_comp_size,
+                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
                                 scope='norm_'+X1X2)
 
             output_2 = FF_X2X2 = self._layer_normalization(
@@ -1195,13 +1298,13 @@ class Model(object):
         return qM
 
 
-    def _linear_sel(self, X, mask, scope):
+    def _linear_sel(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         #length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            X.set_shape([self.Bs, length_X, 1, size_input])
             #X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
             logits = tf.layers.conv2d(X,
                                       filters=1,
@@ -1213,18 +1316,18 @@ class Model(object):
                                       name='conv_sel')
             logits = tf.reshape(logits, [self.Bs, -1])
             X = tf.squeeze(X)
-            X.set_shape([self.Bs, length_X, self.WEAs])
+            X.set_shape([self.Bs, length_X, size_input])
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _linear_sel_y2(self, X, y1_sel, mask, scope):
+    def _linear_sel_y2(self, X, y1_sel, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
-            X.set_shape([self.Bs, length_X, 1, self.WEAs])
+            X.set_shape([self.Bs, length_X, 1, size_input])
 
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
@@ -1242,17 +1345,17 @@ class Model(object):
                                       name='conv_sel')
             logits = tf.reshape(logits, [self.Bs, -1])
             X = tf.squeeze(X)
-            X.set_shape([self.Bs, length_X, self.WEAs])
+            X.set_shape([self.Bs, length_X, size_input])
             output = tf.nn.softmax(
                         tf.add(logits,
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
-    def _conv_sel(self, X, mask, scope):
+    def _conv_sel(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=1,
                                       kernel_size=(7, 1),
@@ -1267,11 +1370,11 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _conv_sel_2(self, X, y1_sel, mask, scope):
+    def _conv_sel_2(self, X, y1_sel, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
 
             y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
             range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
@@ -1293,11 +1396,11 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
-    def _single_conv(self, X, mask, scope):
+    def _single_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=16,
                                       kernel_size=(1, 1),
@@ -1313,11 +1416,11 @@ class Model(object):
             output1, output2 = self._process_logits(logits1, logits2, mask)
         return output1, logits1, output2, logits2
 
-    def _double_conv(self, X, mask, scope):
+    def _double_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=32,
                                       kernel_size=(9, 1),
@@ -1344,7 +1447,7 @@ class Model(object):
 
         return output1, logits1, output2, logits2
 
-    def _all_layers_sel(self, Q, X, mask, scope):
+    def _all_layers_sel(self, Q, X, mask, scope, size_input):
         with tf.variable_scope(scope):
             yp1_vec = []
             yp2_vec = []
@@ -1353,7 +1456,8 @@ class Model(object):
             for i in range(len(X)):
                 yp, logits_y1, yp2, logits_y2 = self._double_conv(X=X[i],
                                                                   mask=mask,
-                                                                  scope='sel_layer_'+str(i))
+                                                                  scope='sel_layer_'+str(i),
+                                                                  size_input=size_input)
                 yp1_vec.append(tf.expand_dims(yp, 1))
                 yp2_vec.append(tf.expand_dims(yp2, 1))
                 logits_y1_vec.append(tf.expand_dims(logits_y1, 1))
@@ -1384,11 +1488,11 @@ class Model(object):
                                       name='second_loss')
         return tf.reshape(logits, [self.Bs, -1])
 
-    def _sym_double_conv(self, X, mask, scope):
+    def _sym_double_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
+            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=32,
                                       kernel_size=(9, 1),
@@ -1548,20 +1652,20 @@ class Model(object):
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
         return output, logits
 
-    def _cross_sel(self, Q, X, mask, scope):
+    def _cross_sel(self, Q, X, mask, scope, size_input):
         """ Attention over attention for computing y1"""
         with tf.variable_scope(scope):
             length_Q = Q.get_shape()[1]
             Q = tf.expand_dims(Q, 2)
-            Q.set_shape([self.Bs, length_Q, 1, self.WEAs])
+            Q.set_shape([self.Bs, length_Q, 1, size_input])
             #Scale question matrix with a matrix W*Q
             Q_Scaled = tf.squeeze(tf.layers.conv2d(Q,
-                                              filters=self.WEAs,
+                                              filters=size_input,
                                               kernel_size=1,
                                               strides=1,
                                               name='W'))
             Q = tf.squeeze(Q)
-            Q.set_shape([self.Bs, length_Q, self.WEAs])
+            Q.set_shape([self.Bs, length_Q, size_input])
             logits = tf.matmul(Q_Scaled, tf.transpose(X, [0, 2, 1]))
             logits_mean = tf.reduce_mean(logits, 2, keep_dims=True)
             logits_std = tf.sqrt(1e-8+tf.reduce_mean(tf.square(logits-logits_mean),2, keep_dims=True))
@@ -1642,9 +1746,9 @@ class Model(object):
                 dim=-1)
         return softmax_y, logits_y
 
-    def _y_selection(self, Q, X, mask, scope, method="linear", y1_sel=None):
+    def _y_selection(self, Q, X, mask, scope, method="linear", y1_sel=None, size_input=None):
         if method == "linear":
-            output, logits = self._linear_sel(X, mask, scope)
+            output, logits = self._linear_sel(X, mask, scope, size_input)
         elif method == "split_layer":
             output, logits = self._split_layer_sel(Q, X, mask, scope)
         elif method == "AoA":
@@ -1652,11 +1756,11 @@ class Model(object):
         elif method == "cross":
             output, logits = self._cross_sel(Q, X, mask, scope)
         elif method == "linear_y2":
-            output, logits = self._linear_sel_y2(X, y1_sel, mask, scope)
+            output, logits = self._linear_sel_y2(X, y1_sel, mask, scope, size_input)
         elif method == "conv":
-            output, logits = self._conv_sel(X, mask, scope)
+            output, logits = self._conv_sel(X, mask, scope, size_input)
         elif method == "conv2":
-            output, logits = self._conv_sel_2(X, y1_sel, mask, scope)
+            output, logits = self._conv_sel_2(X, y1_sel, mask, scope, size_input)
         elif method == "direct":
             output, logits = self._direct(X, mask, scope)
         elif method == "direct2":
@@ -1797,7 +1901,13 @@ class Model(object):
                     x_scaled = tf.concat([x_word_enc, x_char_enc], axis=2)
                     q_scaled = tf.concat([q_word_enc, Acq_wordq_char_enc], axis=2)
                 else:  # An encoder for char and word are defined together
-                    x_scaled, q_scaled = self._encoder(x_scaled, q_scaled, self.WEAs)
+                    len_q = tf.shape(self.q)[1]
+                    len_x = tf.shape(self.x)[1]
+                    q_enc = tf.zeros(shape=[self.Bs,len_q,self.WEAs], dtype=tf.float32)
+                    x_enc = tf.zeros(shape=[self.Bs,len_x,self.WEAs], dtype=tf.float32)
+                    x_enc, q_enc = self._encoder(x_enc, q_enc, self.WEAs)
+                    x_scaled = [x_enc, x_scaled]
+                    q_scaled = [q_enc, q_scaled]
 
         # TO BE DELETED
         # if self.WEAs != (self.WEOs+self.COs):
@@ -1813,48 +1923,69 @@ class Model(object):
         switch = (lambda i: (i%2 == 1)) if config['model_options']['switching_model'] else (lambda i: False)
         if config['model_options']['layer_type'] == 'symmetric':
             layer_func = self._one_layer_symmetric
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='symmetric_small':
             layer_func = self._one_layer_symmetric_small
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='original':
             layer_func = self._one_layer
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
-
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
+        elif config['model_options']['layer_type']=='split_emb_enc':
+            layer_func = self._one_layer_split_enc_emb
         # Computing following layers after encoder
-        q = [q_scaled]
-        x = [x_scaled]
+        q_i = q_scaled
+        x_i = x_scaled
+        if config['model_options']['layer_type']=='split_emb_enc':
+            size_input = 2*self.WEAs
+            q = [tf.concat(q_i,2)]
+            x = [tf.concat(x_i,2)]
+        else:
+            size_input = self.WEAs
+            q = [q_i]
+            x = [x_i]
         for i in range(num_layers_pre+num_layers_post):
-            q_i, x_i = layer_func(q[i], x[i], mask, 'layer_'+str(i), switch=switch(i))
-            q.append(q_i)
-            x.append(x_i)
-
+            q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
+            if config['model_options']['layer_type']=='split_emb_enc':
+                q.append(tf.concat(q_i,2))
+                x.append(tf.concat(x_i,2))
+            else:
+                q.append(q_i)
+                x.append(x_i)
         if self.config['train']['dropout_last_layer_passage']<1.0:
             x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
         if config['model']['y1_sel'] == "single_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._single_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "double_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._double_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "sym_double_conv":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._sym_double_conv(
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         elif config['model']['y1_sel'] == "cross":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._cross_sel(Q=q[-1],
                 X=x[-1],
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input=size_input)
         elif config['model']['y1_sel'] == "all_layers":
             self.yp, self.logits_y1, self.yp2, self.logits_y2 = self._all_layers_sel(Q=q,
                 X=x,
                 mask=mask,
-                scope='y1_y2_sel')
+                scope='y1_y2_sel',
+                size_input = size_input)
         else:
             # Computing outputs
             self.yp, self.logits_y1 = self._y_selection(
@@ -1862,14 +1993,16 @@ class Model(object):
                                                   X=x[-1-num_layers_post],
                                                   mask=mask,
                                                   scope='y1_sel',
-                                                  method=config['model']['y1_sel'])
+                                                  method=config['model']['y1_sel'],
+                                                  size_input=size_input)
             self.yp2, self.logits_y2 = self._y_selection(
                                                    Q=q[-1],
                                                    X=x[-1],
                                                    mask=mask,
                                                    scope='y2_sel',
                                                    method=config['model']['y2_sel'],
-                                                   y1_sel=self.yp)
+                                                   y1_sel=self.yp,
+                                                   size_input=size_input)
         self.Start_Index = tf.argmax(self.yp, axis=-1)
         self.End_Index = tf.argmax(self.yp2, axis=-1)
 

@@ -30,7 +30,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID290 word, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
+                "name": "ID326 word, split_emb_enc double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -79,8 +79,9 @@
 		"memory":false,
 		"memory_size":100,
 		"number_of_cross_attentions":0,
+		"inverse_softmax_cross_att": true,
 		"y1_sel":"double_conv",
-        	"y2_sel":"linear"
+        	"y2_sel":"conv2"
 	},
 	"train":{
 		"check_available_memory":  false,
@@ -117,7 +118,7 @@
 	},
 	"model_options":{
 		"norm_layer": true,
-		"layer_type": "original",
+		"layer_type": "split_emb_enc",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":false,
