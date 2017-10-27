@@ -79,8 +79,16 @@ def main(config):
                 print(last_info)
             if i % config['train']['steps_to_email'] == 0 and i > 0:
                 valid_idxs = data_dev['valid_idxs']
-                ids_to_pdf = valid_idxs[0:config['train']['batch_size']] + valid_idxs[60*config['train']['batch_size']: 61*config['train']['batch_size']] + valid_idxs[-config['train']['batch_size']: -1]
-                Start_Index, End_Index, prob = model.evaluate_all_dev(ids_to_pdf, data_dev)
+                ids_to_pdf = [valid_idxs[0:config['train']['batch_size']], valid_idxs[60*config['train']['batch_size']: 61*config['train']['batch_size']], valid_idxs[-config['train']['batch_size']: -1]]
+                Start_Index, End_Index, prob = [], [], []
+                for i in ids_to_pdf:
+                    s, e, p = model.evaluate_all_dev(ids_to_pdf[i], data_dev)
+                    Start_Index.append(s)
+                    End_Index.append(e)
+                    prob.append(p)
+                Start_Index = [inner for outer in Start_Index for inner in outer]
+                End_Index = [inner for outer in End_Index for inner in outer]
+                prob = [inner for outer in prob for inner in outer]
                 create_pdf(config, ids_to_pdf, Start_Index, End_Index, prob, data_dev=data_dev)
                 send_mail(attach_dir=['./config.json','./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'], body=last_info)
     # To check the exact match and F1 of the model for dev
