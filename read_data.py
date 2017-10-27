@@ -117,7 +117,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
     cy = []
-    x, cx = [], []
+    x, cx, len_sentences = [], [], []
     answerss = []
     p = []
     word_len = []
@@ -126,9 +126,10 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     start_ai = int(round(len(source_data['data']) * start_ratio))
     stop_ai = int(round(len(source_data['data']) * stop_ratio))
     for ai, article in enumerate(tqdm(source_data['data'][start_ai:stop_ai])):
-        xp, cxp = [], []
+        xp, cxp, len_sentences_p = [], [], []
         pp = []
         x.append(xp)
+        len_sentences.append(len_sentences_p)
         cx.append(cxp)
         p.append(pp)
         for pi, para in enumerate(article['paragraphs']):
@@ -136,11 +137,16 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             context = para['context']
             context = context.replace("''", '" ')
             context = context.replace("``", '" ')
-            xi = word_tokenize(context)
-            xi = process_tokens(xi)  # process tokens
+            sent_i = nltk.sent_tokenize(context) #Separate text in sentences
+            xi = list(map(word_tokenize, sent_i))#Tokenize each sentence
+            xi = list(map(process_tokens,xi))
+            len_sentences_i = [len(sent) for sent in xi] #Compute size of each sentence
+            xi = sum(xi, []) #joint every sentence into a single vector
+            xi = process_tokens(xi) # process tokens
             # given xi, add chars
             cxi = [list(xij) for xij in xi]
             max_xc = max([len(list(xij)) for xij in xi])
+            len_sentences_p.append(len_sentences_i)
             xp.append(xi)
             cxp.append(cxi)
             pp.append(context)
@@ -200,7 +206,6 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             # TODO: Add debug option as in the original code
             # if args.debug:
             #     break
-
     if config['glove']['corpus'] == '6B':
         word2vec_dict = get_word2vec(config, word_counter_lower)
     else:
@@ -212,7 +217,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len}
-    shared = {'x': x, 'cx': cx, 'p': p,
+    shared = {'x': x, 'cx': cx, 'p': p, 'len_sent': len_sentences,
               'word_counter': word_counter, 'word_counter_lower': word_counter_lower, 'char_counter': char_counter,
               'word2vec': word2vec_dict, 'char2vec': char2vec_dict}
 

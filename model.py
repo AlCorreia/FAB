@@ -81,8 +81,13 @@ class Model(object):
         self.is_training = tf.placeholder(tf.bool, name='is_training')
         self.x = tf.placeholder('int32', [self.Bs, None], name='x')  # number of batches and number of words
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
+        self.encoder_pos = tf.placeholder('float32', [self.Bs, None], name='encoder_pos')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
+        if self.config['model']['sentence_skip_steps']>0:
+            self.sentence_skip = True
+        else:
+            self.sentence_skip = False
         # Add another placeholder if a second loss is used
         if config['model']['second_loss']:
             self.y3 = tf.placeholder('float32', [self.Bs, None], name='y3')
@@ -439,81 +444,75 @@ class Model(object):
             output_highway = tf.squeeze(input_layer)
         return output_highway
 
-    def _encoder(self, X, Q, input_size):
+    def _encoder(self, X, Q, input_size, sentence_skip=False):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
-        if self.config['model']['full_trainable_encoder']:
-            #Trainable encoder has the size of the biggest paragraph in training
-            pos_emb_mat = tf.get_variable(
-                "pos_emb_mat",
-                shape=[self.config['pre']['max_paragraph_size'], self.WEAs],
-                dtype=tf.float32,
-                initializer=tf.contrib.layers.xavier_initializer())
-
-            encoder_x = tf.nn.embedding_lookup(pos_emb_mat, tf.range(size_x))
-            encoder_q = tf.nn.embedding_lookup(pos_emb_mat, tf.range(size_q))
-
+        low_frequency = self.config['model']['encoder_low_freq']
+        high_frequency = self.config['model']['encoder_high_freq']
+        exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range((input_size)/2), (input_size)/2-1))
+        # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
+        freq = tf.multiply(1/low_frequency, tf.exp(-exponents))
+        if sentence_skip:
+            pos_x = tf.expand_dims(self.encoder_pos, 2)
+            pos_x = tf.tile(pos_x, [1,1,tf.cast(input_size/2,'int32')])
+            pos_freq_product = tf.multiply
+            pos_q = tf.cast(tf.expand_dims(tf.range(size_q), 1), tf.float32)
+            axis_concat = 2
         else:
-            low_frequency = self.config['model']['encoder_low_freq']
-            high_frequency = self.config['model']['encoder_high_freq']
-            # Create a row vector with range(0,n) = [0,1,2,n-1], where n is the greatest size between x and q.
-            pos = tf.cast(tf.expand_dims(tf.range(tf.cond(tf.greater(size_x, size_q), lambda: size_x, lambda: size_q)), 1), tf.float32)
-            pos = pos + self.config['model']['encoder_initial_step'] #To change initial step
-            # Create a vector with all the exponents
-            exponents = tf.multiply(tf.log(high_frequency/low_frequency), tf.divide(tf.range((input_size)/2), (input_size)/2-1))
-            # Power the base frequency by exponents
-            freq = tf.expand_dims(tf.multiply(1/low_frequency, tf.exp(-exponents)), 0)
-            if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
-                freq_PG = tf.get_variable('wave_length', dtype=tf.float32, initializer=freq)
-            else:  # Encoder frequencies are not trained
-                freq_PG = freq
+            pos_x = tf.cast(tf.expand_dims(tf.range(size_x), 1), tf.float32)
+            pos_q = tf.cast(tf.expand_dims(tf.range(size_q), 1), tf.float32)
+            pos_freq_product = tf.matmul
+            axis_concat = 1
+        pos_x = pos_x + self.config['model']['encoder_initial_step'] #To change initial step
+        pos_q = pos_q + self.config['model']['encoder_initial_step'] #To change initial step
+        # Create a vector with all the exponents
+        # Power the base frequency by exponents
+        if self.config['model']['encoder_learn_freq']:  # Encoder frequencies are trained
+            freq_PG = tf.get_variable('wave_length', dtype=tf.float32, initializer=freq)
+        else:  # Encoder frequencies are not trained
+            freq_PG = freq
 
-            freq_PG_scalar = tf.summary.scalar('wave_length', tf.reduce_mean(freq_PG))
+        freq_PG_scalar = tf.summary.scalar('wave_length', tf.reduce_mean(freq_PG))
 
-            # Compute the encoder values
-            if self.config['train']['moving_encoder_regularization']:
-                #Generates a random phase for sin and cosin
-                random_steps = freq_PG * tf.random_uniform(shape=[1],
-                                                           minval=-self.config['model']['encoder_high_freq']*2*np.pi,
-                                                           maxval=+self.config['model']['encoder_high_freq']*2*np.pi)
-                #If it is not training, this random phase is not generated to make it deterministic
-                encoder_angles = tf.matmul(pos, freq_PG) + random_steps*tf.to_float(self.is_training)
-            else:
-                encoder_angles = tf.matmul(pos, freq_PG)
+        # Compute the encoder values
+        if self.config['train']['moving_encoder_regularization']:
+            #Generates a random phase for sin and cosin
+            random_steps = freq_PG * tf.random_uniform(shape=[1],
+                                                       minval=-self.config['model']['encoder_high_freq']*2*np.pi,
+                                                       maxval=+self.config['model']['encoder_high_freq']*2*np.pi)
+            #If it is not training, this random phase is not generated to make it deterministic
+            encoder_angles_x = pos_freq_product(pos_x, freq_PG) + random_steps*tf.to_float(self.is_training)
+            encoder_angles_q = pos_freq_product(pos_q, tf.expand_dims(freq_PG, 0)) + random_steps*tf.to_float(self.is_training)
+        else:
+            encoder_angles_x = pos_freq_product(pos_x, tf.expand_dims(freq_PG, 0))
+            encoder_angles_q = pos_freq_product(pos_q, tf.expand_dims(freq_PG, 0))
 
-            # Compute the encoder values
-            encoder_sin = tf.sin(tf.matmul(pos, freq_PG))
-            encoder_cos = tf.cos(tf.matmul(pos, freq_PG))
+        # Compute the encoder values
+        encoder_sin_x = tf.sin(encoder_angles_x)
+        encoder_cos_x = tf.cos(encoder_angles_x)
 
-            # Concatenate both values
-            encoder = tf.concat([encoder_sin, encoder_cos], axis=1)
-            if self.config['model']['encoder_scaling']:
-                w = tf.get_variable('weight_encoder', shape =[1], dtype=tf.float32, initializer=tf.ones_initializer())
-                encoder = w*encoder
-            # Computes the encoder values for x and q
-            encoder_x = tf.slice(encoder, [0, 0], [size_x, input_size])
+        # Concatenate both values
+        encoder_x = tf.concat([encoder_sin_x, encoder_cos_x], axis=axis_concat)
+        if self.config['model']['encoder_scaling']:
+            w = tf.get_variable('weight_encoder', shape =[1], dtype=tf.float32, initializer=tf.ones_initializer())
+            encoder = w*encoder
+        # Computes the encoder values for x and q
 
-            if self.config['model']['encoder_no_cross']:
-                # If no cross attention between encoders is desired
-                freq_q_sum = tf.add(
-                                    tf.multiply(self.config['model']['encoder_step_skip_size'],
-                                                freq),
-                                    (np.pi/2))
-                encoder_q_angles = tf.add(
-                                            encoder_angles,
-                                            freq_q_sum)
-                encoder_sin_q = tf.sin(encoder_q_angles)
-                encoder_cos_q = tf.cos(encoder_q_angles)
-                encoder_q =  tf.slice(
-                                        tf.concat([encoder_sin_q,encoder_cos_q], axis=1),
-                                        [0, 0],
-                                        [size_q, input_size])
-            else:
-                # If encoder in x and q are the same
-                encoder_q = tf.slice(encoder,[0,0],[size_q,input_size])
+        if self.config['model']['encoder_no_cross']:
+            # If no cross attention between encoders is desired
+            freq_q_sum = tf.add(
+                                tf.multiply(self.config['model']['encoder_step_skip_size'],
+                                            freq),
+                                (np.pi/2))
+            encoder_angles_q = tf.add(
+                                        encoder_angles_q,
+                                        freq_q_sum)
+        encoder_sin_q = tf.sin(encoder_angles_q)
+        encoder_cos_q = tf.cos(encoder_angles_q)
+        encoder_q = tf.concat([encoder_sin_q,encoder_cos_q], axis=1)
 
-        # Encoding x and q
+    # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
         if self.config['model']['number_of_totens']>0:
             size_each_q = tf.cast(tf.expand_dims(tf.reduce_sum(self.q_mask, axis=1),1), tf.int32)  # Compute size of each question
@@ -526,28 +525,6 @@ class Model(object):
             q_encoded = tf.nn.dropout(q_encoded, keep_prob=self.keep_prob_encoder)
         return x_encoded, q_encoded
 
-
-    # to be deleted
-    # def _reduce_dimension(self, X, second=False):
-    #    length_X = X.get_shape()[1]  # number of words in the passage
-    #    with tf.variable_scope('reduce_dimension', reuse=second) as scope:
-    #        with tf.variable_scope('conv2d', reuse=second):
-    #            # If the scaling matrix was previously trained
-    #           # In order to be orthonormal
-    #            weigths = tf.get_variable(
-    #                        'kernel',
-    #                        shape=[1, 1, self.WEOs+self.COs, self.WEAs],
-    #                        initializer=self.initializer)
-    #        X = tf.expand_dims(X, 2)
-    #        X.set_shape([self.Bs, length_X, 1, self.WEOs+self.COs])
-    #        X = tf.squeeze(tf.layers.conv2d(X,
-    #                                        filters=self.WEAs,
-    #                                        kernel_size=1,
-    #                                        strides=1,
-    #                                        use_bias=False,
-    #                                        reuse=True,
-    #                                        name="conv2d"))  # XW
-    #    return X
 
     def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, inverse=False):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
@@ -862,18 +839,18 @@ class Model(object):
                 X1_word, X1_char = tf.split(X1, [self.WEOs, self.COs], axis=2)
                 X2_word, X2_char = tf.split(X2, [self.WEOs, self.COs], axis=2)
                 with tf.variable_scope("encode_word"):
-                    X1_word_enc, X2_word_enc = self._encoder(X1_word, X2_word, self.WEOs)
+                    X1_word_enc, X2_word_enc = self._encoder(X1_word, X2_word, self.WEOs, sentence_skip = self.sentence_skip)
                 with tf.variable_scope("encode_char"):
-                    X1_char_enc, X2_char_enc = self._encoder(X1_char, X2_char, self.COs)
+                    X1_char_enc, X2_char_enc = self._encoder(X1_char, X2_char, self.COs, sentence_skip = self.sentence_skip)
                 X1_enc = tf.concat([X1_word_enc, X1_char_enc], axis=2)
                 X2_enc = tf.concat([X2_word_enc, X2_char_enc], axis=2)
             else: #same encoder for both
-                X1_enc, X2_enc = self._encoder(X1, X2, self.WEOs+self.COs)
+                X1_enc, X2_enc = self._encoder(X1, X2, self.WEOs+self.COs, sentence_skip = self.sentence_skip)
             len_X1 = tf.shape(X1)[1]
             len_X2 = tf.shape(X2)[1]
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
             X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
-            X1_enc_red, X2_enc_red = self._encoder(X1_enc_red, X2_enc_red, out_size)
+            X1_enc_red, X2_enc_red = self._encoder(X1_enc_red, X2_enc_red, out_size, sentence_skip = self.sentence_skip)
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
                                                        scope='Layer_red',
@@ -1895,9 +1872,9 @@ class Model(object):
                     x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
                     q_word, q_char = tf.split(q_scaled, [self.WEOs, self.COs], axis=2)
                     with tf.variable_scope("encode_word"):
-                        x_word_enc, q_word_enc = self._encoder(x_word, q_word, self.WEOs)
+                        x_word_enc, q_word_enc = self._encoder(x_word, q_word, self.WEOs, entence_skip = self.sentence_skip)
                     with tf.variable_scope("encode_char"):
-                        x_char_enc, q_char_enc = self._encoder(x_char, q_char, self.COs)
+                        x_char_enc, q_char_enc = self._encoder(x_char, q_char, self.COs, sentence_skip = self.sentence_skip)
                     x_scaled = tf.concat([x_word_enc, x_char_enc], axis=2)
                     q_scaled = tf.concat([q_word_enc, Acq_wordq_char_enc], axis=2)
                 else:  # An encoder for char and word are defined together
@@ -1905,7 +1882,7 @@ class Model(object):
                     len_x = tf.shape(self.x)[1]
                     q_enc = tf.zeros(shape=[self.Bs,len_q,self.WEAs], dtype=tf.float32)
                     x_enc = tf.zeros(shape=[self.Bs,len_x,self.WEAs], dtype=tf.float32)
-                    x_enc, q_enc = self._encoder(x_enc, q_enc, self.WEAs)
+                    x_enc, q_enc = self._encoder(x_enc, q_enc, self.WEAs, sentence_skip = self.sentence_skip)
                     x_scaled = [x_enc, x_scaled]
                     q_scaled = [q_enc, q_scaled]
 
@@ -2205,6 +2182,7 @@ class Model(object):
     def get_feed_dict(self, batch_idxs, is_training, dataset):
         feed_dict = {}
         x = []
+        encoder_pos = []
         q = []
         qc = []
         xc = []
@@ -2322,6 +2300,13 @@ class Model(object):
                     seq[i][j] = np.concatenate([np.array(seq[i][j]), np.zeros([max_size-len(seq[i][j])])], axis=0)
                 seq[i] = np.concatenate([np.array(seq[i]), np.zeros([max_size_sentence-len(seq[i]), max_size])], axis=0)
             return np.int_(seq)
+
+        def compute_enc_pos(len_sent, sent_step):  # for padding a batch
+            enc_pos = []
+            for i in range(len(len_sent)):
+                delta = len(enc_pos)+i*sent_step
+                enc_pos = enc_pos + list(range(delta,delta+len_sent[i]))
+            return enc_pos
         # Convert every word to its respective id
         if self.config['model']['char_embedding']:
             words_dict = {}
@@ -2334,6 +2319,8 @@ class Model(object):
             yi = dataset['data']['y'][i]
             question = dataset['data']['q'][i]
             par = dataset['shared']['x'][rxi[0]][rxi[1]]
+            len_sent = dataset['shared']['len_sent'][rxi[0]][rxi[1]]
+            enc_pos_i = compute_enc_pos(len_sent, self.config['model']['sentence_skip_steps'])
             xi = list(map(
                 word2id,
                 par))
@@ -2388,6 +2375,7 @@ class Model(object):
                 xc.append(xic)
             q.append(qi)
             x.append(xi)
+            encoder_pos.append(enc_pos_i)
             # Get all the first indices in the sequence
             y1.append([y[0] for y in yi])
             # Get all the second indices... and correct for -1
@@ -2400,11 +2388,12 @@ class Model(object):
             x, y1_new, y2_new = padding_answer(x, y1, y2,
                                    label_smoothing=label_smoothing,
                                    max_size=self.config['pre']['max_paragraph_size'])
+            encoder_pos = padding(encoder_pos, max_size=self.config['pre']['max_question_size'])
             q = padding(q, max_size=self.config['pre']['max_question_size'], toten_ID = list(range(toten_ID_begin, toten_ID_end)))
         else:
             x, y1_new, y2_new = padding_answer(x, y1, y2, label_smoothing=label_smoothing)
+            encoder_pos = padding(encoder_pos)
             q = padding(q, toten_ID = list(range(toten_ID_begin, toten_ID_end)))
-
         if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
             longest_word_size = ordered_words[-1][1][1]
@@ -2450,6 +2439,7 @@ class Model(object):
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
         feed_dict[self.q] = q
+        feed_dict[self.encoder_pos] = encoder_pos
         feed_dict[self.y] = y1_new
         feed_dict[self.y2] = y2_new
         feed_dict[self.is_training] = is_training
@@ -2457,7 +2447,6 @@ class Model(object):
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
         if self.config['model']['pre_trained_char']:
             feed_dict[self.new_char_emb_mat] = dataset['shared']['emb_mat_known_chars']
-
         return feed_dict
 
 

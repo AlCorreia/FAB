@@ -45,7 +45,6 @@
 		"encoder_learn_freq": false,
                 "encoder_step_skip_size": -75.0,
                 "encoder_no_cross": true,
-		"full_trainable_encoder": false,
 		"multi_head_size": 4,
 		"word_emb_size_after_scaling":100,
 		"attention_emb_size": 100,
@@ -80,6 +79,7 @@
 		"memory_size":100,
 		"number_of_cross_attentions":0,
 		"inverse_softmax_cross_att": true,
+		"sentence_skip_steps": 0,
 		"y1_sel":"double_conv",
         	"y2_sel":"conv2"
 	},
@@ -118,7 +118,7 @@
 	},
 	"model_options":{
 		"norm_layer": true,
-		"layer_type": "split_emb_enc",
+		"layer_type": "original",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":false,
