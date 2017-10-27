@@ -1616,8 +1616,8 @@ class Model(object):
         flat_P = tf.reshape(P, [self.Bs, -1])
         values, indices = tf.nn.top_k(flat_P, k=1)
         # Calculate the final indices
-        ind_x = tf.floormod(indices, tf.shape(P)[2])
-        ind_y = tf.floor(indices/tf.shape(P)[2])
+        ind_x = tf.floor(indices/tf.shape(P)[2])
+        ind_y = tf.floormod(indices, tf.shape(P)[2])
 
         return tf.concat(tf.unstack(ind_x), 0), tf.concat(tf.unstack(ind_y), 0)
 
