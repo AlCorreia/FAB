@@ -1603,6 +1603,18 @@ class Model(object):
 
         return output1, output2
 
+    def get_y1_y2(self, prob_1, prob_2):
+        prob_1 = tf.expand_dims(prob_1, 1)
+        prob_2 = tf.expand_dims(prob_2, 1)
+        prob_1T = tf.transpose(prob_1, [0, 2, 1])
+        P = tf.matmul(prob_1T, prob_2)
+        flat_P = tf.reshape(P, [self.Bs, -1])
+        values, indices = tf.nn.top_k(flat_P, k=1)
+        ind_x = tf.floormod(indices, tf.shape(P)[2])
+        ind_y = tf.floor(indices/tf.shape(P)[2])
+
+        return ind_x, ind_y
+
     def _split_layer_sel(self, Q, X, mask, scope):
         """ Compute a self_attention, cross_attention
             and estimate the answer by linear_selec. """
@@ -2003,8 +2015,9 @@ class Model(object):
                                                    method=config['model']['y2_sel'],
                                                    y1_sel=self.yp,
                                                    size_input=size_input)
-        self.Start_Index = tf.argmax(self.yp, axis=-1)
-        self.End_Index = tf.argmax(self.yp2, axis=-1)
+        # self.Start_Index = tf.argmax(self.yp, axis=-1)
+        # self.End_Index = tf.argmax(self.yp2, axis=-1)
+        self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
 
         if config['model']['second_loss']:
             self.yp3 = self._second_loss(X=x[-1], mask=mask, scope="y3")
