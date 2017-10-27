@@ -89,7 +89,6 @@ def main(config):
                 Start_Index = [inner for outer in Start_Index for inner in outer]
                 End_Index = [inner for outer in End_Index for inner in outer]
                 prob = [inner for outer in prob for inner in outer]
-                pdb.set_trace()
                 ids_to_pdf = sum(ids_to_pdf, [])
                 create_pdf(config, ids_to_pdf, Start_Index, End_Index, prob, data_dev=data_dev)
                 send_mail(attach_dir=['./config.json','./plots/plot.png', './plots/answers.pdf'], subject=config['model']['name'], body=last_info)
