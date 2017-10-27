@@ -992,8 +992,14 @@ class Model(object):
         with tf.variable_scope(scope):
             X1_enc, X1_emb = X1
             X2_enc, X2_emb = X2
-            X1_emb_enc = X1_enc + X1_emb
-            X2_emb_enc = X2_enc + X2_emb
+            weight_1 = tf.get_variable("weight_enc_emb_X1", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            weight_2 = tf.get_variable("weight_enc_emb_X2", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            weight_3 = tf.get_variable("weight_enc_emb_X3", shape=[1], dtype=tf.float32, initializer = tf.zeros_initializer())
+            sig_weight_1 = tf.sigmoid(weight_1)
+            sig_weight_2 = tf.sigmoid(weight_2)
+            sig_weight_3 = tf.sigmoid(weight_3)
+            X1_emb_enc = X1_enc*sig_weight_1 + X1_emb*(1-sig_weight_1)
+            X2_emb_enc = X2_enc*sig_weight_2 + X2_emb*(1-sig_weight_2)
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_emb_enc, X2=X1_emb_enc, X3=X1_emb, X4=X1_enc,
                                                        mask=mask[X1X1],
                                                        scope='X1X1',
@@ -1016,17 +1022,6 @@ class Model(object):
                                                            reuse=False)),
                                     scope='norm_FF_'+X1X1,
                                     shape=X1_comp_size[0])
-
-            X1_enc_out = self._layer_normalization(
-                                    tf.add(X1_enc_out,
-                                           self._FeedForward_NN(X1_enc_out,
-                                                          'FF' + X1X1,
-                                                           comp_size=X1_comp_size,
-                                                           reuse=True)),
-                                    scope='norm_FF_'+X1X1,
-                                    shape=X1_comp_size[0],
-                                    reuse=True)
-
 
 
             att_layer_X2X2_out, X2_enc_out = self._attention_layer(X1=X2_emb_enc, X2=X2_emb_enc, X3=X2_emb, X4=X2_enc,
@@ -1053,7 +1048,7 @@ class Model(object):
                                        self._attention_layer(
                                                        X1=cross_out_X1,
                                                        X2=att_layer_X2X2,
-                                                       X3=cross_out_X1+X1_enc_out,
+                                                       X3=cross_out_X1*(sig_weight_3)+X1_enc_out*(1-sig_weight_3),
                                                        mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
@@ -1068,16 +1063,6 @@ class Model(object):
                                                                 comp_size=X2_comp_size)),
                                     scope='norm_FF_' + X2X2,
                                     shape=X2_comp_size[0])
-            X2_enc_out = self._layer_normalization(
-                                    tf.add(X2_enc_out,
-                                           self._FeedForward_NN(X2_enc_out,
-                                                                'FF_' + X2X2,
-                                                                comp_size=X2_comp_size,
-                                                                reuse=True)),
-                                    scope='norm_FF_' + X2X2,
-                                    shape=X2_comp_size[0],
-                                    reuse=True)
-
 
             output_1 = [X1_enc_out, FF_X1X1]
             output_2 = [X2_enc_out, FF_X2X2]
@@ -1952,13 +1937,20 @@ class Model(object):
         # Computing following layers after encoder
         q_i = q_scaled
         x_i = x_scaled
-        q = [tf.add_n(q_i)]
-        x = [tf.add_n(x_i)]
+        if config['model_options']['layer_type']=='split_emb_enc':
+            q = [tf.add_n(q_i)]
+            x = [tf.add_n(x_i)]
+        else:
+            q = [q_i]
+            x = [x_i]
         for i in range(num_layers_pre+num_layers_post):
             q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
-            q.append(tf.add_n(q_i))
-            x.append(tf.add_n(x_i))
-
+            if config['model_options']['layer_type']=='split_emb_enc':
+                q.append(tf.add_n(q_i))
+                x.append(tf.add_n(x_i))
+            else:
+                q.append(q_i)
+                x.append(x_i)
         if self.config['train']['dropout_last_layer_passage']<1.0:
             x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
         if config['model']['y1_sel'] == "single_conv":
