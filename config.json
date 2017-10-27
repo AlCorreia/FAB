@@ -15,7 +15,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": true,
+		"run": false,
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
@@ -54,7 +54,7 @@
                 "time_encoding": true,
 		"n_pre_layer": 3,
 		"n_post_layer":0,
-                "char_embedding":false,
+                "char_embedding":true,
 		"pre_trained_char":false,
 		"char_embedding_size":8,
 		"char_convolution_size": 5,
@@ -72,7 +72,7 @@
 		"encoder_initial_step":500,
 		"encode_char_and_vec_separately":false,
                 "encoder_scaling":false,
-		"one_layer_reduction":false,
+		"one_layer_reduction":true,
 		"reduced_layer_dropout_amplification":1.0,
 		"second_loss":false,
 		"number_of_totens":0,
@@ -81,12 +81,12 @@
 		"number_of_cross_attentions":0,
 		"inverse_softmax_cross_att": true,
 		"y1_sel":"double_conv",
-        	"y2_sel":"linear"
+        	"y2_sel":"conv2"
 	},
 	"train":{
 		"check_available_memory":  false,
 		"train": true,
-		"batch_size":75,
+		"batch_size":5,
 		"steps":600000,
 		"steps_to_save": 3000,
 		"steps_to_email":21000,
