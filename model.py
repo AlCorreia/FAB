@@ -853,13 +853,13 @@ class Model(object):
                 X1_word, X1_char = tf.split(X1, [self.WEOs, self.COs], axis=2)
                 X2_word, X2_char = tf.split(X2, [self.WEOs, self.COs], axis=2)
                 with tf.variable_scope("encode_word"):
-                    X1_word_enc, X2_word_enc = self._encoder(X1_word, X2_word, self.WEOs, sentence_skip = self.sentence_skip)
+                    X2_word_enc, X1_word_enc = self._encoder(X2_word, X1_word, self.WEOs, sentence_skip = self.sentence_skip)
                 with tf.variable_scope("encode_char"):
-                    X1_char_enc, X2_char_enc = self._encoder(X1_char, X2_char, self.COs, sentence_skip = self.sentence_skip)
+                    X2_char_enc, X1_char_enc = self._encoder(X2_char, X1_char, self.COs, sentence_skip = self.sentence_skip)
                 X1_enc = tf.concat([X1_word_enc, X1_char_enc], axis=2)
                 X2_enc = tf.concat([X2_word_enc, X2_char_enc], axis=2)
             else: #same encoder for both
-                X1_enc, X2_enc = self._encoder(X1, X2, self.WEOs+self.COs, sentence_skip = self.sentence_skip)
+                X2_enc, X1_enc = self._encoder(X2, X1, self.WEOs+self.COs, sentence_skip = self.sentence_skip)
             len_X1 = tf.shape(X1)[1]
             len_X2 = tf.shape(X2)[1]
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
