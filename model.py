@@ -526,7 +526,7 @@ class Model(object):
         return x_encoded, q_encoded
 
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, inverse=False):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, cross=False):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         keep_prob_attention = tf.pow(self.keep_prob_attention,dropout)
         keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
@@ -658,7 +658,7 @@ class Model(object):
             Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4], tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
-            if self.config['model']['conv_attention']:
+            if (self.config['model']['conv_attention']=="cross" and cross) or self.config['model']['conv_attention']=="all":
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X1, length_X2, MHs])
                 logits = tf.layers.conv2d(logits,
@@ -669,10 +669,10 @@ class Model(object):
                                           use_bias=False,
                                           padding='same',
                                           reuse=False,
-                                          name='V4_Comp')
+                                          name='Conv_att_Comp')
                 logits = tf.transpose(logits, [3, 0, 1, 2])
 
-            if inverse: # Softmax direction is changed
+            if (cross and self.config['model']['inverse_softmax_cross_att']): # Softmax direction is changed
                 dimension = 2
             else:
                 dimension = 3
@@ -917,7 +917,7 @@ class Model(object):
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
                                                        dropout=self.config['model']['reduced_layer_dropout_amplification'],
-                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
+                                                       cross=True)),
                                 scope='norm_'+X2X1,
                                 shape=X2_comp_size[0])
 
@@ -1043,7 +1043,7 @@ class Model(object):
                                                        mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
-                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
+                                                       cross=True)),
                                 scope='norm_'+X2X1,
                                 shape=X2_comp_size[0])
 
@@ -1113,7 +1113,7 @@ class Model(object):
                                                        mask=mask_X2X1,
                                                        scope=X2X1,
                                                        comp_size=X2_comp_size,
-                                                       inverse=self.config['model']['inverse_softmax_cross_att'])),
+                                                       cross=True)),
                                 scope='norm_'+X1X2)
 
             output_2 = FF_X2X2 = self._layer_normalization(
