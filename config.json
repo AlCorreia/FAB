@@ -120,6 +120,7 @@
 	"model_options":{
 		"norm_layer": true,
 		"layer_type": "original",
+		"layer_sequence":"SSO",
         	"switching_model":false,
         	"word2vec_scaling": "matrix",
 		"word2vec_orthonormal_scaling":false,

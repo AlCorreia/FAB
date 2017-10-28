@@ -1246,6 +1246,41 @@ class Model(object):
 
         return Q, X
 
+    def _self_att_layer(self, Q, X, mask, scope, switch=False):
+        with tf.variable_scope(scope):
+            att_layer_QQ = self._layer_normalization(
+                                tf.add(Q,
+                                       self._attention_layer(
+                                                       X1=Q,
+                                                       mask=mask['qq'],
+                                                       scope='QQ',
+                                                       comp_size=self.q_comp_size)),
+                                scope='norm_QQ')
+            FF_QQ = self._layer_normalization(
+                        tf.add(att_layer_QQ,
+                               self._FeedForward_NN(att_layer_QQ,
+                                                    'FF_QQ',
+                                                    comp_size=self.q_comp_size)),
+                        scope='norm_FF_QQ')
+            # Self-Atttention Layer X
+            att_layer_XX = self._layer_normalization(
+                                tf.add(X,
+                                       self._attention_layer(
+                                                       X1=X,
+                                                       mask=mask['xx'],
+                                                       scope='XX',
+                                                       comp_size=self.x_comp_size)),
+                                scope='norm_XX')
+
+            FF_XX = self._layer_normalization(
+                                tf.add(att_layer_XX,
+                                       self._FeedForward_NN(att_layer_XX,
+                                                            'FF_XX',
+                                                            comp_size=self.x_comp_size)),
+                                scope='norm_FF_XX')
+
+        return FF_QQ, FF_XX
+
     def _memory_layer(self, q):
         M_size = self.config['model']['memory_size']
         with tf.variable_scope("memory"):
@@ -1772,6 +1807,12 @@ class Model(object):
             output, logits = self._direct_2(X, y1_sel, mask, scope)
         return output, logits
 
+    def _get_layer_func(self, ID):
+        if ID == "S":
+            return self._self_att_layer
+        elif ID=="O":
+            return self._one_layer
+
     def _build_forward_Attention(self):
         config = self.config
         # Mask matrices
@@ -1938,6 +1979,8 @@ class Model(object):
         elif config['model_options']['layer_type']=='parallel':
             layer_func = self._one_layer_parallel
             q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
+        elif config['model_options']['layer_type']=='personalized':
+            q_scaled, x_scaled = tf.add_n(q_scaled),  tf.add_n(x_scaled)
         elif config['model_options']['layer_type']=='split_emb_enc':
             layer_func = self._one_layer_split_enc_emb
         # Computing following layers after encoder
@@ -1951,14 +1994,21 @@ class Model(object):
             size_input = self.WEAs
             q = [q_i]
             x = [x_i]
-        for i in range(num_layers_pre+num_layers_post):
-            q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
-            if config['model_options']['layer_type']=='split_emb_enc':
-                q.append(tf.concat(q_i,2))
-                x.append(tf.concat(x_i,2))
-            else:
+        if self.config['model_options']['layer_type']=='personalized':
+            for i in range(len(self.config['model_options']['layer_sequence'])):
+                layer_func = self._get_layer_func(self.config['model_options']['layer_sequence'][i])
+                q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
                 q.append(q_i)
                 x.append(x_i)
+        else:
+            for i in range(num_layers_pre+num_layers_post):
+                q_i, x_i = layer_func(q_i, x_i, mask, 'layer_'+str(i), switch=switch(i))
+                if config['model_options']['layer_type']=='split_emb_enc':
+                    q.append(tf.concat(q_i,2))
+                    x.append(tf.concat(x_i,2))
+                else:
+                    q.append(q_i)
+                    x.append(x_i)
         if self.config['train']['dropout_last_layer_passage']<1.0:
             x[-1] = tf.nn.dropout(x[-1], keep_prob=self.keep_prob_last_x)
         if config['model']['y1_sel'] == "single_conv":
