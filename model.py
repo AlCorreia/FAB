@@ -659,6 +659,7 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             if (self.config['model']['conv_attention']=="cross" and cross) or self.config['model']['conv_attention']=="all":
+                logits = logits*mask #masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
                 logits = tf.layers.conv2d(logits,
