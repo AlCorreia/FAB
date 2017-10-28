@@ -660,7 +660,7 @@ class Model(object):
 
             if (self.config['model']['conv_attention']=="cross" and cross) or self.config['model']['conv_attention']=="all":
                 logits = tf.transpose(logits, [1, 2, 3, 0])
-                logits.set_shape([self.Bs, length_X1, length_X2, MHs])
+                logits.set_shape([self.Bs, length_X2, length_X1, MHs])
                 logits = tf.layers.conv2d(logits,
                                           filters=MHs,
                                           kernel_size=[5, 5],
