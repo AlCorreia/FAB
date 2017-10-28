@@ -181,4 +181,4 @@ def EM_and_F1(answer, answer_est):
         y2_correct.append(max(y2_correct_i))
         EM.append(max(EM_i))
         F1.append(max(F1_i))
-    return [sum(EM)/len(EM), sum(F1)/len(F1), sum(y1_correct)/len(y1_correct), sum(y2_correct)/len(y2_correct), sum(y2_greater_y1_correct)/len(y2_greater_y1_correct)]
+    return [100*sum(EM)/len(EM), 100*sum(F1)/len(F1), sum(y1_correct)/len(y1_correct), sum(y2_correct)/len(y2_correct), sum(y2_greater_y1_correct)/len(y2_greater_y1_correct)]

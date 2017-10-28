@@ -257,8 +257,6 @@ class Model(object):
 
             # Write the results to Tensorboard
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
-            self.EM_train.append(EM)
-            self.F1_train.append(F1)
             summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
             summary_F1 = tf.Summary(value=[tf.Summary.Value(tag='F1', simple_value=F1)])
             self.writer.add_summary(summary, global_step)
