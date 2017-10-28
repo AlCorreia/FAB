@@ -30,7 +30,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID326 word, split_emb_enc double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
+                "name": "ID332 word, encoder_skip_sentence=20, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -74,12 +74,13 @@
 		"one_layer_reduction":false,
 		"reduced_layer_dropout_amplification":1.0,
 		"second_loss":false,
+		"single_loss":false,
 		"number_of_totens":0,
 		"memory":false,
 		"memory_size":100,
 		"number_of_cross_attentions":0,
 		"inverse_softmax_cross_att": true,
-		"sentence_skip_steps": 0,
+		"sentence_skip_steps": 20,
 		"y1_sel":"double_conv",
         	"y2_sel":"conv2"
 	},
