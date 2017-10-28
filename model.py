@@ -8,6 +8,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 from tqdm import tqdm
 from random import randint
 from utils import plot, send_mail, EM_and_F1, F1
+from evaluate_dev import evaluate_dev
 import pdb
 
 from my_tf import optimize_loss
@@ -296,6 +297,7 @@ class Model(object):
         self.y2_correct_dev.append(y2_correct)
         self.y2_greater_y1_correct.append(y2_greater_y1_correct)
         self.dev_writer.add_summary(summary, global_step=global_step)
+        return Start_Index, End_Index
 
     def _load(self):  # To load a checkpoint
         # TODO: Add structure to save/load different checkpoints.

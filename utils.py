@@ -30,6 +30,17 @@ def get_word_span(context, spans, start, stop):
 	assert len(word_id) > 0, "{} {} {} {}".format(context, spans, start, stop)
 	return word_id[0], (word_id[-1] + 1), word_index[0][0], word_index[-1][0]
 
+def get_words_pos(context, words):
+    search_index = 0
+    word_pos =[]
+    for word in words:
+        word_init = context.find(word, search_index)
+        assert word_init >= 0
+        word_end = word_init + len(word)-1
+        word_pos.append([word_init,word_end])
+        search_index = word_end+1
+    return word_pos
+
 
 def process_tokens(temp_tokens):
 	tokens = []
@@ -122,6 +133,25 @@ def F1(y1, y2, prob_yp1, prob_yp2):
 
     return F1
 
+
+def get_answer(Start_Index,End_Index,batch_idxs, data):
+    answer = []
+    dictionary = {}
+    data['data'].keys()
+    rx = data['data']['*x']
+    x = data['shared']['x']
+    p = data['shared']['p']
+    cy = data['data']['cy']
+    ids = data['data']['ids']
+    word_pos = data['data']['word_pos']
+    for i in range(len(Start_Index)):
+        addr_1, addr_2 = rx[batch_idxs[i]][0], rx[batch_idxs[i]][1]
+        ID = ids[batch_idxs[i]]
+        char_init = word_pos[addr_1][addr_2][Start_Index[i]][0]
+        char_end = word_pos[addr_1][addr_2][End_Index[i]][1]
+        answer = p[addr_1][addr_2][char_init:char_end+1]
+        dictionary = {**dictionary, **{ID: answer}}
+    return dictionary
 
 def EM_and_F1(answer, answer_est):
     EM = []

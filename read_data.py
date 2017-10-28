@@ -9,7 +9,7 @@ import os
 import pdb
 from random import randint
 from tqdm import tqdm
-from utils import get_word_span, process_tokens
+from utils import get_word_span, process_tokens, get_words_pos
 
 
 def get_word2vec(config, word_counter):
@@ -117,7 +117,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
     cy = []
-    x, cx, len_sentences = [], [], []
+    x, cx, len_sentences, word_pos = [], [], [], []
     answerss = []
     p = []
     word_len = []
@@ -126,9 +126,10 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     start_ai = int(round(len(source_data['data']) * start_ratio))
     stop_ai = int(round(len(source_data['data']) * stop_ratio))
     for ai, article in enumerate(tqdm(source_data['data'][start_ai:stop_ai])):
-        xp, cxp, len_sentences_p = [], [], []
+        xp, cxp, len_sentences_p, word_pos_p = [], [], [], []
         pp = []
         x.append(xp)
+        word_pos.append(word_pos_p)
         len_sentences.append(len_sentences_p)
         cx.append(cxp)
         p.append(pp)
@@ -143,10 +144,12 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             len_sentences_i = [len(sent) for sent in xi] #Compute size of each sentence
             xi = sum(xi, []) #joint every sentence into a single vector
             xi = process_tokens(xi) # process tokens
+            word_pos_i = get_words_pos(context, xi)
             # given xi, add chars
             cxi = [list(xij) for xij in xi]
             max_xc = max([len(list(xij)) for xij in xi])
             len_sentences_p.append(len_sentences_i)
+            word_pos_p.append(word_pos_i)
             xp.append(xi)
             cxp.append(cxi)
             pp.append(context)
@@ -215,7 +218,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         char2vec_dict = get_char2vec(config, char_counter)
 
     # add context here
-    data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
+    data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy, 'word_pos': word_pos,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len}
     shared = {'x': x, 'cx': cx, 'p': p, 'len_sent': len_sentences,
               'word_counter': word_counter, 'word_counter_lower': word_counter_lower, 'char_counter': char_counter,

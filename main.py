@@ -8,10 +8,10 @@ import os
 import pdb
 import math
 from tqdm import tqdm
-from utils import plot, send_mail
+from utils import plot, send_mail, get_answer
 import numpy as np
 import tensorflow as tf
-
+from evaluate_dev import evaluate_dev
 from model import Model
 from pdf_creator import create_pdf
 
@@ -100,20 +100,26 @@ def main(config):
 
 def evaluate(config, model, data_dev):
     """ To check the exact match and F1 of the model """
+    answer_dict = {}
     model.EM_dev = []
     model.F1_dev = []
     model.y1_correct_dev = []
     model.y2_correct_dev = []
     model.y2_greater_y1_correct=[]
     valid_idxs = data_dev['valid_idxs']
-    for i in tqdm(range(math.floor(
-            len(data_dev['valid_idxs'])/config['train']['batch_size'])),
-            file=sys.stdout): # this file = sys.stdout is to only to allow the print function
+    for i in range(100): #tqdm(range(math.floor(
+            #len(data_dev['valid_idxs'])/config['train']['batch_size'])),
+            #file=sys.stdout): # this file = sys.stdout is to only to allow the print function
         init = (i) * config['train']['batch_size']
         end = (i+1)*config['train']['batch_size']
         batch_idxs = valid_idxs[init:end]
-        model.evaluate(batch_idxs, data_dev)
-    return [sum(model.EM_dev)/len(model.EM_dev), sum(model.F1_dev)/len(model.F1_dev), sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev), sum(model.y2_greater_y1_correct)/len(model.y2_greater_y1_correct)]
+        Start_Index, End_Index = model.evaluate(batch_idxs, data_dev)
+        answer_dict = {**answer_dict, **get_answer(Start_Index,End_Index,batch_idxs, data_dev)}
+    source_path = os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format('dev'))
+    source_data = json.load(open(source_path, 'r'))
+    exact_match, f1 = evaluate_dev(source_data['data'], answer_dict)
+    pdb.set_trace()
+    return [exact_match, f1, sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev), sum(model.y2_greater_y1_correct)/len(model.y2_greater_y1_correct)]
 
 
 if __name__ == '__main__':
