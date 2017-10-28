@@ -660,7 +660,21 @@ class Model(object):
             Scaling = tf.sqrt(tf.cast(comp_size[1],tf.float32)/tf.cast(comp_size[4], tf.float32))
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
-            if inverse: #Softmax direction is changed
+            if self.config['model']['conv_attention']:
+                logits = tf.transpose(logits, [1, 2, 3, 0])
+                logits.set_shape([self.Bs, length_X1, length_X2, MHs])
+                logits = tf.layers.conv2d(logits,
+                                          filters=MHs,
+                                          kernel_size=[5, 5],
+                                          strides=1,
+                                          kernel_initializer=self.initializer,
+                                          use_bias=False,
+                                          padding='same',
+                                          reuse=False,
+                                          name='V4_Comp')
+                logits = tf.transpose(logits, [3, 0, 1, 2])
+
+            if inverse: # Softmax direction is changed
                 dimension = 2
             else:
                 dimension = 3
