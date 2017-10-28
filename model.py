@@ -1567,6 +1567,8 @@ class Model(object):
             return mask1, mask2
         if self.config['model']['alternating_y1_y2']:
             mask1, mask2 = tf.cond(tf.equal(tf.floormod(self.global_step, 2), 0), f1, f2)
+        elif self.config['model']['single_loss']:
+            mask1 = mask2 = tf.cast(mask['x'], tf.float32)
         else:
             mask1, mask2 = f1()
         output1 = tf.nn.softmax(
@@ -1580,7 +1582,7 @@ class Model(object):
 
         return output1, output2
 
-    def get_y1_y2(self, prob_1, prob_2):
+    def get_prob_matrix(self, prob_1, prob_2, flat=True):
         # Multiply the probabilities of y1 and y2
         prob_1 = tf.expand_dims(prob_1, 1)
         prob_2 = tf.expand_dims(prob_2, 1)
@@ -1589,8 +1591,16 @@ class Model(object):
         # Filer out examples where y2 < y1
         upper_diag = tf.matrix_band_part(tf.ones_like(P), 0, -1)
         P = tf.multiply(P, upper_diag)
-        # Take the value and index of the maximum
+        if flat:
+            return tf.reshape(P, [self.Bs, -1])
+        else:
+            return P
+
+    def get_y1_y2(self, prob_1, prob_2):
+        # Get the probability matrix
+        P = self.get_prob_matrix(prob_1, prob_2, flat=False)
         flat_P = tf.reshape(P, [self.Bs, -1])
+        # Take the value and index of the maximum
         values, indices = tf.nn.top_k(flat_P, k=1)
         # Calculate the final indices
         ind_x = tf.floor(indices/tf.shape(P)[2])
@@ -1998,9 +2008,12 @@ class Model(object):
                                                    method=config['model']['y2_sel'],
                                                    y1_sel=self.yp,
                                                    size_input=size_input)
-        # self.Start_Index = tf.argmax(self.yp, axis=-1)
-        # self.End_Index = tf.argmax(self.yp2, axis=-1)
-        self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
+
+        if self.config['model']['single_loss']:
+            self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
+        else:
+            self.Start_Index = tf.argmax(self.yp, axis=-1)
+            self.End_Index = tf.argmax(self.yp2, axis=-1)
 
         if config['model']['second_loss']:
             self.yp3 = self._second_loss(X=x[-1], mask=mask, scope="y3")
@@ -2164,15 +2177,20 @@ class Model(object):
         """
             Defines the model's loss function.
         """
-        # TODO: add collections if useful. Otherwise delete them.
-        # tf.add_to_collection('losses', ce_loss)
-        if (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2') or (self.config['model']['y2_sel']=='cross'):
+        # Calculate the loss for y1 and y2
+        if self.config['model']['single_loss']:
+            pred = self.get_prob_matrix(self.yp, self.yp2)
+            truth = self.get_prob_matrix(self.y, self.y2)
+            self.loss = tf.reduce_mean(-tf.reduce_sum(truth*tf.log(tf.clip_by_value(pred,1e-10,1.0)), axis=1))
+
+        elif (self.config['model']['y2_sel']=='linear_y2') or (self.config['model']['y2_sel']=='conv2') or (self.config['model']['y1_sel']=='single_conv') or (self.config['model']['y1_sel']=='double_conv') or (self.config['model']['y2_sel']=='direct2') or (self.config['model']['y2_sel']=='cross'):
             ce_loss = -tf.reduce_sum(self.y_corrected*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2_corrected*tf.log(tf.clip_by_value(self.yp2,1e-10,1.0)), axis=1)
         else:
             ce_loss = -tf.reduce_sum(self.y*tf.log(tf.clip_by_value(self.yp,1e-10,1.0)), axis=1)
             self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2, 1e-10, 1.0)), axis=1)
 
+        # Add a second loss
         if self.config['model']['second_loss']:
             batch_F1 = F1(self.y, self.y2, self.yp, self.yp2)
             prob = tf.reduce_max(self.yp, axis=-1) * tf.reduce_max(self.yp2, axis=-1)
@@ -2180,11 +2198,10 @@ class Model(object):
             # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2, ce_loss3]))
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
-        else:
+        elif not self.config['model']['single_loss']:
             self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2]))
-
-        tf.summary.scalar('ce_loss', tf.reduce_mean(ce_loss))
-        tf.summary.scalar('ce_loss2', tf.reduce_mean(self.ce_loss2))
+            tf.summary.scalar('ce_loss', tf.reduce_mean(ce_loss))
+            tf.summary.scalar('ce_loss2', tf.reduce_mean(self.ce_loss2))
         tf.summary.scalar('loss', self.loss)
         # tf.add_to_collection('ema/scalar', self.loss)
 
