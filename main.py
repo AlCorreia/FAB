@@ -107,9 +107,9 @@ def evaluate(config, model, data_dev):
     model.y2_correct_dev = []
     model.y2_greater_y1_correct=[]
     valid_idxs = data_dev['valid_idxs']
-    for i in range(100): #tqdm(range(math.floor(
-            #len(data_dev['valid_idxs'])/config['train']['batch_size'])),
-            #file=sys.stdout): # this file = sys.stdout is to only to allow the print function
+    for i in tqdm(range(math.floor(
+            len(data_dev['valid_idxs'])/config['train']['batch_size'])),
+            file=sys.stdout): # this file = sys.stdout is to only to allow the print function
         init = (i) * config['train']['batch_size']
         end = (i+1)*config['train']['batch_size']
         batch_idxs = valid_idxs[init:end]
