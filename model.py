@@ -659,7 +659,7 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             if (self.config['model']['conv_attention']=="cross" and cross) or self.config['model']['conv_attention']=="all":
-                logits = logits*mask #masking logits
+                logits = logits*mask  # masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
                 logits = tf.layers.conv2d(logits,
@@ -865,7 +865,7 @@ class Model(object):
             len_X2 = tf.shape(X2)[1]
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
             X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
-            X1_enc_red, X2_enc_red = self._encoder(X1_enc_red, X2_enc_red, out_size, sentence_skip = self.sentence_skip)
+            X2_enc_red, X1_enc_red = self._encoder(X2_enc_red, X1_enc_red, out_size, sentence_skip = self.sentence_skip)
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
                                                        scope='Layer_red',
