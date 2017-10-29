@@ -662,7 +662,7 @@ class Model(object):
                 logits = logits*mask  # masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
-                logits = tf.layers.conv2d(logits,
+                conv_logits = tf.layers.conv2d(logits,
                                           filters=MHs,
                                           kernel_size=[5, 5],
                                           strides=1,
@@ -671,6 +671,7 @@ class Model(object):
                                           padding='same',
                                           reuse=False,
                                           name='Conv_att_Comp')
+                logits = logits + conv_logits
                 logits = tf.transpose(logits, [3, 0, 1, 2])
 
             if (cross and self.config['model']['inverse_softmax_cross_att']): # Softmax direction is changed
