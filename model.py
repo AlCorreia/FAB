@@ -2436,7 +2436,7 @@ class Model(object):
         # Convert every word to its respective id
         if self.config['model']['char_embedding']:
             words_dict = {}
-            word_size_counter = [0]*(self.config['pre']['max_word_size']+1)
+            word_size_counter = [0]*(self.config['pre']['max_word_size']+10)
         for i in batch_idxs:
             word_count = {}
             word_list_x = {}
