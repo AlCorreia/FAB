@@ -16,6 +16,16 @@ from model import Model
 from pdf_creator import create_pdf
 
 
+def str2bool(v):
+    """ Converts a string to a boolean value. """
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def main(config):
     if config['pre']['run']:
         prepro_each(config=config, data_type='train', out_name='train') # to preprocess the train data
@@ -122,6 +132,40 @@ def evaluate(config, model, data_dev):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '--dropout', '-d',
+        type=str,
+        default=''
+    )
+
+    parser.add_argument(
+        '--nsteps', '-st',
+        type=int,
+        default=-1,
+        help="Number of iterations to run"
+    )
+
+    parser.add_argument(
+        '--encoder_skip', '-s',
+        type=int,
+        default=-1,
+        help="Size of the gap introduced by a period"
+    )
+
+    FLAGS, unparsed = parser.parse_known_args()
+
     with open('config.json') as json_data_file:
         config = json.load(json_data_file)
+    if FLAGS.dropout is not '':
+        config['train']['dropout_encoder'] = FLAGS.dropout
+        config['train']['dropout_attention'] = FLAGS.dropout
+        config['train']['dropout_FF'] = FLAGS.dropout
+        config['train']['dropout_selector'] = FLAGS.dropout
+        config['train']['dropout_char_pre_conv'] = FLAGS.dropout
+    if FLAGS.encoder_skip != -1:
+        config['model']["sentence_skip_steps"] = FLAGS.encoder_skip
+    if FLAGS.nsteps != -1:
+        config['train']['steps'] = FLAGS.nsteps
     main(config)
