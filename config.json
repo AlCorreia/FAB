@@ -15,7 +15,7 @@
 	},
 	"pre":{
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
-		"run": false,
+		"run": true,
 		"n_chunks": 30,
 		"finetune": false,
 		"data_filter": true,
@@ -30,7 +30,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID332 word, encoder_skip_sentence=20, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
+                "name": "ID350 word, encoder_skip_sentence=10, max_answer=15, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100:100",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -80,9 +80,10 @@
 		"memory_size":100,
 		"number_of_cross_attentions":0,
 		"inverse_softmax_cross_att": true,
-		"sentence_skip_steps": 20,
-		"conv_attention":true,
-		"conv_attention_per_head":true,
+		"sentence_skip_steps": 10,
+		"conv_attention":"all",
+		"conv_attention_per_head":false,
+		"max_answer_size": 15,
 		"y1_sel":"double_conv",
         	"y2_sel":"conv2"
 	},
