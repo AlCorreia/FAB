@@ -122,9 +122,9 @@ def evaluate(config, model, data_dev):
             file=sys.stdout): # this file = sys.stdout is to only to allow the print function
         init = (i) * config['train']['batch_size']
         end = (i+1)*config['train']['batch_size']
-        batch_idxs = valid_idxs[init:end]
+        batch_idxs = valid_idxs[init:end]+list(range(config['train']['batch_size']-len(valid_idxs[init:end])))
         #If the last batch does not have batch_size samples, it adds some examples to complete batch_size:
-        Start_Index, End_Index = model.evaluate(batch_idxs+list(range(config['train']['batch_size']-len(batch_idxs))), data_dev)
+        Start_Index, End_Index = model.evaluate(batch_idxs, data_dev)
         answer_dict = {**answer_dict, **get_answer(Start_Index,End_Index,batch_idxs, data_dev)}
     source_path = os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format('dev'))
     source_data = json.load(open(source_path, 'r'))
