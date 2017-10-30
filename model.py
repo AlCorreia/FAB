@@ -199,7 +199,7 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
-        self.train_step = optimize_loss(self.loss, global_step=self.global_step, optimizer=self.optimizer, summaries=["gradients"], learning_rate = None)
+        self.train_step = optimize_loss(self.loss, global_step=self.global_step, optimizer=self.optimizer, learning_rate = None)
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None

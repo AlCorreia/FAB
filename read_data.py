@@ -241,10 +241,7 @@ def read_data(config, data_type, data_filter=None, data_train=None):
     #max_par = max([len(shared['x'][i][j]) for i in range(len(shared['x'])) for j in range(len(shared['x'][i]))]) #max paragraph size
     #max_q = max([len(data['q'][i]) for i in range(len(data['q']))]) # max question size
 
-    if data_filter: #if there is a filter to discard some of the passages or questions
-        valid_idxs, valid_idxs_grouped = data_filter_func(config, data, shared)
-    else:
-        valid_idxs, valid_idxs_grouped = range(num_examples), [range(num_examples)]
+    valid_idxs, valid_idxs_grouped = data_filter_func(config, data, shared, data_filter)
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     word2vec_dict = shared['word2vec']
@@ -340,19 +337,21 @@ def read_data(config, data_type, data_filter=None, data_train=None):
     return data_set
 
 
-def data_filter_func(config, data, shared):
+def data_filter_func(config, data, shared, data_filter):
     valid_idxs = []
     x_len = data['paragraph_len']
     q_len = data['question_len']
     word_len = data['word_len']
     # Delete paragraphs and questions longer than threshold.
-    for i in range(len(data['q'])):
-        #q = data['q'][i]
-        #rx = data['*x'][i]
-        #x = shared['x'][rx[0]][rx[1]]
-        if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']) and (word_len[i]<=config['pre']['max_word_size']):
-            valid_idxs.append(i)
-
+    if data_filter: #If it is desired to filter some questions
+        for i in range(len(data['q'])):
+            #q = data['q'][i]
+            #rx = data['*x'][i]
+            #x = shared['x'][rx[0]][rx[1]]
+            if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']) and (word_len[i]<=config['pre']['max_word_size']):
+                valid_idxs.append(i)
+    else:
+        valid_idxs = range(len(data['q']))
     # Group paragraphs and questions with similar sizes
     n_valid_idxs = len(valid_idxs)
     x_len = [x_len[valid_idxs[i]] for i in range(len(valid_idxs))]

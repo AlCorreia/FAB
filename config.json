@@ -114,7 +114,8 @@
 		"label_smoothing": 0.90,
 		"gaussian_smoothing":true,
 		"moving_encoder_regularization":false,
-		"xavier_initialization":true
+		"xavier_initialization":true,
+		"full_dev_ev": true
 	},
 	"weights_init":{
 		"W_Scaling_Variance": "NOT_IMPLEMENTED",

@@ -32,7 +32,7 @@ def main(config):
         prepro_each(config=config, data_type='dev', out_name='dev') # to preprocess the dev data
     if config['model']['run']:
         data = read_data(config, 'train', data_filter=True)
-        data_dev = read_data(config, 'dev', data_filter=True, data_train=data)
+        data_dev = read_data(config, 'dev', data_filter=(not config['train']['full_dev_ev']), data_train=data)
         # update config with max_word_size, max_passage_size, embedded_vector
         config = update_config(config, data)
         # Create an instance of the model
@@ -117,13 +117,14 @@ def evaluate(config, model, data_dev):
     model.y2_correct_dev = []
     model.y2_greater_y1_correct=[]
     valid_idxs = data_dev['valid_idxs']
-    for i in tqdm(range(math.floor(
+    for i in tqdm(range(math.ceil(
             len(data_dev['valid_idxs'])/config['train']['batch_size'])),
             file=sys.stdout): # this file = sys.stdout is to only to allow the print function
         init = (i) * config['train']['batch_size']
         end = (i+1)*config['train']['batch_size']
         batch_idxs = valid_idxs[init:end]
-        Start_Index, End_Index = model.evaluate(batch_idxs, data_dev)
+        #If the last batch does not have batch_size samples, it adds some examples to complete batch_size:
+        Start_Index, End_Index = model.evaluate(batch_idxs+list(range(config['train']['batch_size']-len(batch_idxs))), data_dev)
         answer_dict = {**answer_dict, **get_answer(Start_Index,End_Index,batch_idxs, data_dev)}
     source_path = os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format('dev'))
     source_data = json.load(open(source_path, 'r'))
