@@ -82,6 +82,7 @@
 		"inverse_softmax_cross_att": true,
 		"sentence_skip_steps": 20,
 		"conv_attention":true,
+		"conv_attention_per_head":true,
 		"y1_sel":"double_conv",
         	"y2_sel":"conv2"
 	},

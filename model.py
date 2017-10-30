@@ -662,15 +662,23 @@ class Model(object):
                 logits = logits*mask  # masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
-                conv_logits = tf.layers.conv2d(logits,
-                                          filters=MHs,
-                                          kernel_size=[5, 5],
-                                          strides=1,
-                                          kernel_initializer=self.initializer,
-                                          use_bias=False,
-                                          padding='same',
-                                          reuse=False,
-                                          name='Conv_att_Comp')
+                if not self.config['model']['conv_attention_per_head']:
+                    conv_logits = tf.layers.conv2d(logits,
+                                                   filters=MHs,
+                                                   kernel_size=[5, 5],
+                                                   strides=1,
+                                                   kernel_initializer=self.initializer,
+                                                   use_bias=False,
+                                                   padding='same',
+                                                   reuse=False,
+                                                   name='Conv_att_Comp')
+                else:
+                    # [filter_height, filter_width, in_channels, channel_multiplier]
+                    conv_logits = depthwise_conv2d_native(logits,
+                                                          filter=[5, 5, MHs, 1],
+                                                          strides=1,
+                                                          padding="SAME",
+                                                          name='Conv_att_Comp')
                 logits = logits + conv_logits
                 logits = tf.transpose(logits, [3, 0, 1, 2])
 
