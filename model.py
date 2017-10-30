@@ -28,6 +28,11 @@ class Model(object):
                 Configuration file specifying the model's parameters
 
         """
+        #ADDING OUTPUTS
+        self.Tensors_out = {}
+
+
+ 
         self.config = config
         # Define the directory where the results will be saved
         # TODO: Define a better convention for directories names
@@ -679,7 +684,7 @@ class Model(object):
                                                           strides=1,
                                                           padding="SAME",
                                                           name='Conv_att_Comp')
-                logits = logits + conv_logits
+                logits = conv_logits
                 logits = tf.transpose(logits, [3, 0, 1, 2])
 
             if (cross and self.config['model']['inverse_softmax_cross_att']): # Softmax direction is changed
