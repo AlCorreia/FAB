@@ -28,11 +28,7 @@ class Model(object):
                 Configuration file specifying the model's parameters
 
         """
-        #ADDING OUTPUTS
-        self.Tensors_out = {}
 
-
- 
         self.config = config
         # Define the directory where the results will be saved
         # TODO: Define a better convention for directories names
@@ -259,7 +255,6 @@ class Model(object):
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
-
             # Write the results to Tensorboard
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
             summary_EM = tf.Summary(value=[tf.Summary.Value(tag='EM', simple_value=EM)])
@@ -1850,20 +1845,20 @@ class Model(object):
         mask['x'] = tf.cast(tf.sign(self.x), tf.float32)
         mask['qq'] = tf.cast(
                         tf.sign(
-                            tf.matmul(tf.expand_dims(self.q, -1),
-                                      tf.expand_dims(self.q, 1))), tf.float32)
+                            tf.matmul(tf.sign(tf.expand_dims(self.q, -1)),
+                                      tf.sign(tf.expand_dims(self.q, 1)))), tf.float32)
         mask['xx'] = tf.cast(
                         tf.sign(
-                            tf.matmul(tf.expand_dims(self.x, -1),
-                                      tf.expand_dims(self.x, 1))), tf.float32)
+                            tf.matmul(tf.sign(tf.expand_dims(self.x, -1)),
+                                      tf.sign(tf.expand_dims(self.x, 1)))), tf.float32)
         mask['xq'] = tf.cast(
                         tf.sign(
-                            tf.matmul(tf.expand_dims(self.x, -1),
-                                      tf.expand_dims(self.q, 1))), tf.float32)
+                            tf.matmul(tf.sign(tf.expand_dims(self.x, -1)),
+                                      tf.sign(tf.expand_dims(self.q, 1)))), tf.float32)
         mask['qx'] = tf.cast(
                         tf.sign(
-                            tf.matmul(tf.expand_dims(self.q, -1),
-                                      tf.expand_dims(self.x, 1))), tf.float32)
+                            tf.matmul(tf.sign(tf.expand_dims(self.q, -1)),
+                                      tf.sign(tf.expand_dims(self.x, 1)))), tf.float32)
         with tf.variable_scope("word_emb"):
             # TODO: Having a config variable for this is not the best solution
             # TODO: Save the embedding matrix somewhere else
