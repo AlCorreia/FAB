@@ -80,6 +80,7 @@
 		"memory_size":100,
 		"number_of_cross_attentions":0,
 		"inverse_softmax_cross_att": true,
+		"gated_cross_softmax": false,
 		"sentence_skip_steps": 0,
 		"conv_attention":"all",
 		"conv_attention_kernel":"original",

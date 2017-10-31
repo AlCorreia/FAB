@@ -754,20 +754,30 @@ class Model(object):
             else:
                 dimension = 3
 
-            # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
-            if self.config['train']['dropout_attention_pre_softmax'] < 1.0:
-                # This is done to save memory if dropout is not used
-                softmax = tf.nn.softmax(
-                    tf.add(
-                        tf.divide(logits, Scaling),
-                        tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
-                    dim=dimension)
+            if (cross and self.config['model']['gated_cross_softmax']): # Softmax direction is changed
+                no_attention = tf.get_variable('no_attention', shape=1, initializer = tf.ones_initializer())
+                logits = logits/Scaling
+                max_logits = tf.expand_dims(tf.reduce_max(logits,3),3)
+                exp_logits = tf.exp(logits-max_logits)
+                exp_no_att = tf.exp(no_attention-max_logits)
+                sum_logits = tf.expand_dims(tf.reduce_sum(exp_logits,3),3) + exp_no_att
+                softmax = exp_logits/sum_logits
             else:
-                softmax = tf.nn.softmax(
-                    tf.add(
-                        tf.divide(logits, Scaling),
-                        tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
-                    dim=dimension)
+
+                # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
+                if self.config['train']['dropout_attention_pre_softmax'] < 1.0:
+                    # This is done to save memory if dropout is not used
+                    softmax = tf.nn.softmax(
+                        tf.add(
+                            tf.divide(logits, Scaling),
+                            tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
+                        dim=dimension)
+                else:
+                    softmax = tf.nn.softmax(
+                        tf.add(
+                            tf.divide(logits, Scaling),
+                            tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
+                        dim=dimension)
             # Final mask is applied
             if self.config['train']['dropout_attention_post_softmax'] < 1.0:
                 # To normalize softmax sum to 1
