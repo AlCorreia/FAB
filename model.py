@@ -876,6 +876,8 @@ class Model(object):
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
             X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
             X2_enc_red, X1_enc_red = self._encoder(X2_enc_red, X1_enc_red, out_size, sentence_skip = self.sentence_skip)
+            X2 = tf.nn.dropout(X2, self.keep_prob_encoder)
+            X1 = tf.nn.dropout(X1, self.keep_prob_encoder)
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
                                                        scope='Layer_red',
@@ -1900,11 +1902,10 @@ class Model(object):
                     char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
                                          axis=0)
                 else:  # There are not pre-trained characters
+                    init_char = tf.get_variable("char_emb_mat_init", dtype=tf.float32, shape=[self.CVs, self.CEs], initializer=self.initializer)
                     char_emb_mat = tf.get_variable(
                         "char_emb_mat",
-                        dtype=tf.float32,
-                        shape=[self.CVs, self.CEs],
-                        initializer=self.initializer)  # [CVs,CEs]
+                        initializer=init_char*5.5)  # [CVs,CEs]
                 # Embedding of characters
                 Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
                 Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
@@ -1979,6 +1980,8 @@ class Model(object):
                     q_enc = tf.zeros(shape=[self.Bs,len_q,self.WEAs], dtype=tf.float32)
                     x_enc = tf.zeros(shape=[self.Bs,len_x,self.WEAs], dtype=tf.float32)
                     x_enc, q_enc = self._encoder(x_enc, q_enc, self.WEAs, sentence_skip = self.sentence_skip)
+                    x_scaled = tf.nn.dropout(x_scaled, self.keep_prob_encoder)
+                    q_scaled = tf.nn.dropout(q_scaled, self.keep_prob_encoder)
                     x_scaled = [x_enc, x_scaled]
                     q_scaled = [q_enc, q_scaled]
 
