@@ -876,8 +876,10 @@ class Model(object):
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
             X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
             X2_enc_red, X1_enc_red = self._encoder(X2_enc_red, X1_enc_red, out_size, sentence_skip = self.sentence_skip)
-            X2 = tf.nn.dropout(X2, self.keep_prob_encoder)
-            X1 = tf.nn.dropout(X1, self.keep_prob_encoder)
+            X1_enc = tf.nn.dropout(X1_enc, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']-1))
+            X2_enc = tf.nn.dropout(X2_enc, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']-1))
+            X2 = tf.nn.dropout(X2, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']))
+            X1 = tf.nn.dropout(X1, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']))
             att_layer_X1X1_out, X1_enc_out = self._attention_layer(X1=X1_enc, X2=X1_enc, X3=X1, X4=X1_enc_red,
                                                        mask=mask[X1X1],
                                                        scope='Layer_red',
