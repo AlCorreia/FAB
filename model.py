@@ -1649,7 +1649,9 @@ class Model(object):
         prob_1T = tf.transpose(prob_1, [0, 2, 1])
         P = tf.matmul(prob_1T, prob_2)
         # Filer out examples where y2 < y1
-        upper_diag = tf.matrix_band_part(tf.ones_like(P), 0, -1)
+        upper_diag = tf.matrix_band_part(tf.ones_like(P),
+                                         num_lower=0,
+                                         num_upper=self.config['model']['max_answer_size']-1)
         P = tf.multiply(P, upper_diag)
         if flat:
             return tf.reshape(P, [self.Bs, -1])
@@ -1663,7 +1665,7 @@ class Model(object):
         # Take the value and index of the maximum
         values, indices = tf.nn.top_k(flat_P, k=1)
         # Calculate the final indices
-        ind_x = tf.floor(indices/tf.shape(P)[2])
+        ind_x = tf.cast(tf.floor(indices/tf.shape(P)[2]), tf.int32)
         ind_y = tf.floormod(indices, tf.shape(P)[2])
 
         return tf.concat(tf.unstack(ind_x), 0), tf.concat(tf.unstack(ind_y), 0)
@@ -2084,22 +2086,8 @@ class Model(object):
                                                    y1_sel=self.yp,
                                                    size_input=size_input)
 
-        if self.config['model']['single_loss']:
+        if self.config['model']['max_answer_size'] >0:
             self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
-        elif self.config['model']['max_answer_size'] >0:
-            P = tf.matrix_band_part(tf.expand_dims(self.yp,2)*tf.expand_dims(self.yp2,1),num_lower=0, num_upper=self.config['model']['max_answer_size']-1)
-            flat_P = tf.reshape(P, [self.Bs, -1])
-        # Take the value and index of the maximum
-            values, indices = tf.nn.top_k(flat_P, k=1)
-        # Calculate the final indices
-            self.Start_Index = tf.cast(tf.concat(
-                                   tf.unstack(
-                                            tf.floor(indices/tf.shape(P)[2])
-                                            ),0),tf.int32)
-            self.End_Index = tf.concat(
-                                 tf.unstack(
-                                      tf.floormod(indices, tf.shape(P)[2])
-                                      ),0)
 
         else:
             self.Start_Index = tf.argmax(self.yp, axis=-1)
