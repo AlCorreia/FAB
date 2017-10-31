@@ -663,11 +663,13 @@ class Model(object):
                 logits = logits*mask  # masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
+                att_kernel_size = list(map(int,self.config['model']['conv_attention_kernel_size'].split(',')))
+
                 if self.config['model']['conv_attention_kernel'] == "per_channel":
                     # [filter_height, filter_width, in_channels, channel_multiplier]
-                    conv_logits = depthwise_conv2d_native(logits,
-                                                          filter=[5, 5, MHs, 1],
-                                                          strides=1,
+                    conv_logits = tf.nn.depthwise_conv2d_native(logits,
+                                                          filter=att_kernel_size+[MHs, 1],
+                                                          strides=[1,1,1,1],
                                                           padding="SAME",
                                                           name='Conv_att_Comp')
                 elif (self.config['model']['conv_attention_kernel'] == "multi") and (MHs == 4):
@@ -709,10 +711,30 @@ class Model(object):
                                                     name='Conv_att_Comp4')
                     conv_logits = tf.concat([conv_logits1, conv_logits2, conv_logits3, conv_logits4], axis=3)
                 # Default to normal convolution
+                elif (self.config['model']['conv_attention_kernel'] == "deep"):
+                    hidden_logits = tf.layers.conv2d(logits,
+                                                   filters=2*MHs,
+                                                   kernel_size=att_kernel_size,
+                                                   strides=1,
+                                                   kernel_initializer=self.initializer,
+                                                   use_bias=False,
+                                                   padding='same',
+                                                   reuse=False,
+                                                   activation = tf.tanh,
+                                                   name='Conv_att_Comp_1')
+                    conv_logits = tf.layers.conv2d(hidden_logits,
+                                                   filters=MHs,
+                                                   kernel_size=att_kernel_size,
+                                                   strides=1,
+                                                   kernel_initializer=self.initializer,
+                                                   use_bias=False,
+                                                   padding='same',
+                                                   reuse=False,
+                                                   name='Conv_att_Comp_2')
                 else:
                     conv_logits = tf.layers.conv2d(logits,
                                                    filters=MHs,
-                                                   kernel_size=[5, 5],
+                                                   kernel_size=att_kernel_size,
                                                    strides=1,
                                                    kernel_initializer=self.initializer,
                                                    use_bias=False,
