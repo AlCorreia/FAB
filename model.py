@@ -667,9 +667,13 @@ class Model(object):
 
                 if self.config['model']['conv_attention_kernel'] == "per_channel":
                     # [filter_height, filter_width, in_channels, channel_multiplier]
+                    kernel = tf.get_variable('kernel',
+                                              shape=att_kernel_size+[MHs, 1],
+                                              dtype=tf.float32,
+                                              initializer=self.initializer)
                     conv_logits = tf.nn.depthwise_conv2d_native(logits,
-                                                          filter=att_kernel_size+[MHs, 1],
-                                                          strides=[1,1,1,1],
+                                                          filter=kernel,
+                                                          strides=[1, 1, 1, 1],
                                                           padding="SAME",
                                                           name='Conv_att_Comp')
                 elif (self.config['model']['conv_attention_kernel'] == "multi") and (MHs == 4):
