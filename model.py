@@ -28,7 +28,8 @@ class Model(object):
                 Configuration file specifying the model's parameters
 
         """
-
+        self.weights =[0,-1.32237,-4.66205,-8.53077,-11.484,-12.9115,-13.2051,-13.2673,-13.7885,-14.8277,-15.9396,-16.6519,-16.8666,-16.8842,-17.0945,-17.6377,-18.3228,-18.8376,-19.0372,-19.0528,-19.1493,-19.4805,-19.965,-20.3816,-20.5785,-20.6036,-20.6465,-20.8586,-21.221,-21.574,-21.771,-21.8099,-21.8262,-21.9625,-22.2395,-22.5445,-22.7415,-22.7957,-22.8004,-22.8855,-23.0979,-23.3628,-23.5582,-23.6277,-23.63,-23.6798,-23.841,-24.0705,-24.2621,-24.3461,-24.3521,-24.3778,-24.4975,-24.6945,-24.8801,-24.977,-24.9905,-25.0007,-25.0865,-25.2534,-25.4305,-25.5382,-25.5619,-25.5633,-25.6216,-25.7603,-25.9267,-26.0428,-26.0781,-26.076,-26.1125,-26.2249,-26.3786,-26.5006,-26.5479,-26.5467,-26.5664,-26.6546,-26.7939,-26.919,-26.9782,-26.9813,-26.9887,-27.0551,-27.1786,-27.304,-27.3743,-27.3842,-27.3836,-27.4306,-27.5376,-27.6605,-27.7406,-27.7592,-27.7544,-27.7847,-27.8747,-27.9927,-28.0807,-28.1092,-28.1036,-28.1201,-28.1932,-28.3038,-28.3978,-28.4367,-28.4332,-28.4389,-28.4955,-28.5967,-28.6944,-28.7437,-28.745,-28.7427,-28.7838,-28.8741,-28.973,-29.0321,-29.0401,-29.0329,-29.0599,-29.1379,-29.2356,-29.3035,-29.3197,-29.3105,-29.3251,-29.3899,-29.4841,-29.5593,-29.5848,-29.5763,-29.5805,-29.6319,-29.7204,-29.801,-29.8363,-29.8309,-29.827,-29.865,-29.9458,-30.0299,-30.0749,-30.0747,-30.0652,-30.0904,-30.1618,-30.2472,-30.3014,-30.3083,-30.2956,-30.309,-30.3696,-30.454,-30.5165,-30.5318,-30.5184,-30.5215,-30.5704,-30.6516,-30.721,-30.7456,-30.734,-30.7284,-30.7652,-30.8409,-30.9155,-30.9499,-30.9424,-30.9302,-30.9548,-31.0231,-31.1009,-31.1451,-31.1436,-31.127,-31.1399,-31.1991,-31.278,-31.3314,-31.3377,-31.3191,-31.3211,-31.3697,-31.4474,-31.5091,-31.5246,-31.5065,-31.4989,-31.536,-31.6101,-31.6788,-31.7042,-31.689,-31.6735,-31.6985,-31.7668,-31.8407,-31.8767,-31.8666,-31.8453,-31.858,-31.9184,-31.9953,-32.0419,-32.0391,-32.0142,-32.0151,-32.0656,-32.1433,-32.1999,-32.2063,-32.1803,-32.1701,-32.2093,-32.2853,-32.3508,-32.3679,-32.3435,-32.3236,-32.3501,-32.4218,-32.4949,-32.5237,-32.5036,-32.4757,-32.4889,-32.5536,-32.6323,-32.6734,-32.6602,-32.6267,-32.6261,-32.6814,-32.7633,-32.8168,-32.8131,-32.7764,-32.7624,-32.806,-32.8884,-32.9538,-32.9618,-32.925,-32.8984,-32.9281,-33.0079,-33.0843,-33.106,-33.0723,-33.0344,-33.0485,-33.1225,-33.2081,-33.2451,-33.2179,-33.1709,-33.168,-33.2327,-33.3251,-33.3786,-33.3615,-33.3081,-33.2875,-33.3393,-33.4356,-33.5059,-33.5026,-33.4463,-33.4078,-33.443,-33.5394,-33.6265,-33.6407,-33.5855,-33.5298,-33.5447,-33.6368,-33.7397,-33.775,-33.7259,-33.6544,-33.6457,-33.728,-33.8446,-33.9045,-33.8673,-33.7829,-33.7472,-33.8134,-33.9401,-34.0276,-34.0095,-33.9165,-33.8512,-33.8936,-34.0252,-34.1426,-34.1517,-34.0568,-33.9602,-33.97,-34.0984,-34.2465,-34.2924,-34.2052,-34.0777,-34.0449,-34.1585,-34.3352,-34.4284,-34.3629,-34.2089,-34.1227,-34.2049,-34.4033,-34.5541,-34.5297,-34.3598,-34.2112,-34.2398,-34.4443,-34.6597,-34.7016,-34.5369,-34.3226,-34.2701,-34.4529,-34.7306,-34.8674,-34.7439,-34.4739,-34.3123,-34.4291,-34.7486,-35.0049,-34.9749,-34.6835,-34.3955,-34.3876,-34.6979,-35.0786,-35.2042,-34.9608,-34.5604,-34.3675,-34.5807,-35.0465,-35.3776,-35.2864,-34.8445,-34.4376,-34.44,-34.884,-35.4162,-35.5892,-35.2484,-34.679,-34.3767,-34.6271,-35.2512,-35.7425,-35.6891,-35.1288,-34.5313,-34.4122,-34.8993,-35.6147,-35.9805,-35.6964,-34.9949,-34.457,-34.5381,-35.193,-35.9091,-36.121,-35.6673,-34.9197,-34.4828,-34.711,-35.4321,-36.0907,-36.1896,-35.6741,-34.9606,-34.6037,-34.8709,-35.5537,-36.145,-36.2283,-35.7757,-35.1446,-34.7981,-34.9723,-35.5294,-36.0801,-36.2651,-35.9899,-35.4654,-35.0502]
+        
         self.Tensors_out = {}
         self.config = config
         # Define the directory where the results will be saved
@@ -87,6 +88,7 @@ class Model(object):
         self.encoder_pos = tf.placeholder('float32', [self.Bs, None], name='encoder_pos')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
         self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
+        self.mask_sentence = tf.placeholder('float32', [self.Bs, None, None], name='y2')
         if self.config['model']['sentence_skip_steps']>0:
             self.sentence_skip = True
         else:
@@ -527,7 +529,7 @@ class Model(object):
         return x_encoded, q_encoded
 
 
-    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, cross=False):
+    def _attention_layer(self, X1, mask, X2=None, X3=None, X4=None, scope=None, comp_size=None, reuse=False, dropout=1.0, cross=False, sentence_masking=False):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         keep_prob_attention = tf.pow(self.keep_prob_attention,dropout)
         keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
@@ -759,6 +761,10 @@ class Model(object):
             else:
                 dimension = 3
 
+        if sentence_masking and self.config['model']['sentence_masking']:
+            sentence_masking_gains = tf.get_variable('sentence_masking_attention'+scope, shape=[comp_size[4], 1, 1, 1], initializer = tf.ones_initializer())
+            logits = logits + tf.sigmoid(sentence_masking_gains)*self.mask_sentence
+        with tf.variable_scope(scope, reuse=reuse):
             if (cross and self.config['model']['gated_cross_softmax']): # Softmax direction is changed
                 no_attention = tf.get_variable('no_attention', shape=[1], initializer = tf.ones_initializer())
                 logits = logits/Scaling
@@ -933,12 +939,16 @@ class Model(object):
             X2 = Q
             X2_comp_size = Q_Cs
             X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
+            X1_masking = True
+            X2_masking = False
         else:
             X1 = Q
             X1_comp_size = Q_Cs
             X2 = X
             X2_comp_size = X_Cs
             X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
+            X1_masking = False
+            X2_masking = True
         with tf.variable_scope(scope):
             if ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                 #An encoder for char and word are defined separetely
@@ -966,7 +976,8 @@ class Model(object):
                                                        scope='Layer_red',
                                                        comp_size=X1_comp_size,
                                                        reuse=False,
-                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'],
+                                                       sentence_masking = X1_masking)
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
                                        att_layer_X1X1_out),
@@ -989,7 +1000,8 @@ class Model(object):
                                                        scope='Layer_red',
                                                        comp_size=X2_comp_size,
                                                        reuse=True,
-                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'])
+                                                       dropout=self.config['model']['reduced_layer_dropout_amplification'],
+                                                       sentence_masking = X2_masking)
 
             att_layer_X2X2 = self._layer_normalization(
                                 tf.add(X2,
@@ -1166,19 +1178,24 @@ class Model(object):
             X2 = Q
             X2_comp_size = self.q_comp_size
             X1X1, X2X2, X2X1, X1X2, X2_v = 'xx', 'qq', 'qx', 'xq', 'q'
+            X1_masking = True
+            X2_masking = False
         else:
             X1 = Q
             X1_comp_size = self.q_comp_size
             X2 = X
             X2_comp_size = self.x_comp_size
             X1X1, X2X2, X2X1, X1X2, X2_v = 'qq', 'xx', 'xq', 'qx', 'x'
+            X1_masking = False
+            X2_masking = True
         with tf.variable_scope(scope):
             att_layer_X1X1 = self._layer_normalization(
                                 tf.add(X1,
                                        self._attention_layer(X1=X1,
                                                        mask=mask[X1X1],
                                                        scope=X1X1,
-                                                       comp_size=X1_comp_size)),
+                                                       comp_size=X1_comp_size,
+                                                       sentence_masking=X1_masking)),
                                 scope='norm_'+X1X1)
 
             output_1 = FF_X1X1 = self._layer_normalization(
@@ -1193,7 +1210,8 @@ class Model(object):
                                        self._attention_layer(X1=X2,
                                                        mask=mask[X2X2],
                                                        scope=X2X2,
-                                                       comp_size=X2_comp_size)),
+                                                       comp_size=X2_comp_size,
+                                                       sentence_masking=X2_masking)),
                                 scope='norm_' + X2X2)
             if self.config['model']['number_of_cross_attentions']>0:
                 cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
@@ -2507,6 +2525,22 @@ class Model(object):
                 delta = len(enc_pos)+i*sent_step
                 enc_pos = enc_pos + list(range(delta,delta+len_sent[i]))
             return enc_pos
+
+        def compute_mask_pos(len_sent, max_sent):  # for padding a batch
+            enc_pos = []
+            len_after = max_sent
+            len_before = 0
+            final_mask = np.zeros([0,len_after])
+            for i in range(len(len_sent)):
+                max_delta = self.weights[len_sent[i]]
+                len_after = len_after - len_sent[i]
+                mask = np.concatenate([max_delta*np.ones([len_before]),np.zeros([len_sent[i]]),max_delta*np.ones([len_after])])
+                mask = np.tile(mask, (len_sent[i],1))
+                final_mask = np.concatenate([final_mask,mask],0)
+                len_before = len_before + len_sent[i]
+            final_mask = np.concatenate([final_mask, np.zeros([len_after,max_sent])],0)
+            return final_mask
+
         # Convert every word to its respective id
         if self.config['model']['char_embedding']:
             words_dict = {}
@@ -2594,6 +2628,11 @@ class Model(object):
             x, y1_new, y2_new = padding_answer(x, y1, y2, label_smoothing=label_smoothing)
             encoder_pos = padding(encoder_pos)
             q = padding(q, toten_ID = list(range(toten_ID_begin, toten_ID_end)))
+            masks_sentence = []
+        for i in batch_idxs:
+            rxi = dataset['data']['*x'][i]
+            len_sent = dataset['shared']['len_sent'][rxi[0]][rxi[1]]
+            masks_sentence.append(compute_mask_pos(len_sent, len(x[0])))
         if self.config['model']['char_embedding']:  # Padding chars
             ordered_words = sorted(words_dict.items(), key=lambda x: x[1][1])
             longest_word_size = ordered_words[-1][1][1]
@@ -2642,6 +2681,7 @@ class Model(object):
         feed_dict[self.encoder_pos] = encoder_pos
         feed_dict[self.y] = y1_new
         feed_dict[self.y2] = y2_new
+        feed_dict[self.mask_sentence] = masks_sentence
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']

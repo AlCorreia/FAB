@@ -82,6 +82,7 @@
 		"inverse_softmax_cross_att": true,
 		"gated_cross_softmax": false,
 		"sentence_skip_steps": 0,
+		"sentence_masking": false,
 		"conv_attention":"all",
 		"conv_attention_kernel":"original",
 		"conv_attention_kernel_size":"5,5",
