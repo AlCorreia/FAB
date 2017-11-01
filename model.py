@@ -755,13 +755,13 @@ class Model(object):
                 dimension = 3
 
             if (cross and self.config['model']['gated_cross_softmax']): # Softmax direction is changed
-                no_attention = tf.get_variable('no_attention', shape=1, initializer = tf.ones_initializer())
-                logits = logits/Scaling+tf.multiply(1.0 - mask, VERY_LOW_NUMBER)
+                no_attention = tf.get_variable('no_attention', shape=[1], initializer = tf.ones_initializer())
+                logits = logits/Scaling
                 max_logits = tf.expand_dims(tf.reduce_max(logits,3),3)
-                exp_logits = tf.exp(logits-max_logits)
+                exp_logits = tf.exp(logits-max_logits)*mask
                 exp_no_att = tf.exp(no_attention-max_logits)
                 sum_logits = tf.expand_dims(tf.reduce_sum(exp_logits,3),3) + exp_no_att
-                softmax = exp_logits/sum_logits
+                softmax = exp_logits/(sum_logits+1e-6)
             else:
 
                 # Sofmax in each head of the splitted Q and K softmax(Q*K^T):
