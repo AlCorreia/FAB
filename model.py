@@ -756,7 +756,7 @@ class Model(object):
 
             if (cross and self.config['model']['gated_cross_softmax']): # Softmax direction is changed
                 no_attention = tf.get_variable('no_attention', shape=1, initializer = tf.ones_initializer())
-                logits = logits/Scaling
+                logits = logits/Scaling+tf.multiply(1.0 - mask, VERY_LOW_NUMBER)
                 max_logits = tf.expand_dims(tf.reduce_max(logits,3),3)
                 exp_logits = tf.exp(logits-max_logits)
                 exp_no_att = tf.exp(no_attention-max_logits)
@@ -1722,7 +1722,7 @@ class Model(object):
 
         return output1, output2
 
-    def get_prob_matrix(self, prob_1, prob_2, flat=True):
+    def get_prob_matrix(self, prob_1, prob_2, flat=True, max_answer_size=-1):
         # Multiply the probabilities of y1 and y2
         prob_1 = tf.expand_dims(prob_1, 1)
         prob_2 = tf.expand_dims(prob_2, 1)
@@ -1731,7 +1731,7 @@ class Model(object):
         # Filer out examples where y2 < y1
         upper_diag = tf.matrix_band_part(tf.ones_like(P),
                                          num_lower=0,
-                                         num_upper=self.config['model']['max_answer_size']-1)
+                                         num_upper=max_answer_size)
         P = tf.multiply(P, upper_diag)
         if flat:
             return tf.reshape(P, [self.Bs, -1])
@@ -1740,7 +1740,7 @@ class Model(object):
 
     def get_y1_y2(self, prob_1, prob_2):
         # Get the probability matrix
-        P = self.get_prob_matrix(prob_1, prob_2, flat=False)
+        P = self.get_prob_matrix(prob_1, prob_2, flat=False, max_answer_size=self.config['model']['max_answer_size']-1)
         flat_P = tf.reshape(P, [self.Bs, -1])
         # Take the value and index of the maximum
         values, indices = tf.nn.top_k(flat_P, k=1)
