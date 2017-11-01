@@ -660,10 +660,15 @@ class Model(object):
             logits = tf.matmul(Q, tf.transpose(K, [0, 1, 3, 2]))
 
             if (self.config['model']['conv_attention']=="cross" and cross) or self.config['model']['conv_attention']=="all":
+                att_kernel_size = list(map(int,self.config['model']['conv_attention_kernel_size'].split(',')))
+                if cross:
+                    att_kernel_size = att_kernel_size[-2:] #Last two if cross
+                else:
+                    att_kernel_size = att_kernel_size[:2] #First two if not cross
                 logits = logits*mask  # masking logits
                 logits = tf.transpose(logits, [1, 2, 3, 0])
                 logits.set_shape([self.Bs, length_X2, length_X1, MHs])
-                att_kernel_size = list(map(int,self.config['model']['conv_attention_kernel_size'].split(',')))
+
 
                 if self.config['model']['conv_attention_kernel'] == "per_channel":
                     # [filter_height, filter_width, in_channels, channel_multiplier]
