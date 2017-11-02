@@ -121,7 +121,6 @@ def evaluate(dataset, predictions):
             f1_score, prediction, ground_truths)
         f1 += f1_i
         statistics = update_statistics([EM_i,f1_i], classifier, statistics)
-    pdb.set_trace()
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
 
