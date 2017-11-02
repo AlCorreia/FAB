@@ -111,13 +111,40 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         tokenizer_result = [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
         return tokenizer_result
 
+    def question_classify(tokens):
+        if 'what' in tokens:
+            return 0
+        elif 'which' in tokens:
+            return 1
+        elif 'who' in tokens or 'whom' in tokens or 'whose' in tokens: #there are only 352 whom and 304 whose
+            return 2
+        elif 'how many'  in tokens:
+             return 3
+        elif 'how much'  in tokens:
+             return 4
+        elif 'how long' in tokens:
+             return 5
+        elif 'how' in tokens: #there were only 64 how often
+             return 6
+        elif 'when' in tokens:
+            return 7
+        elif 'where' in tokens:
+            return 8
+        elif 'why' in tokens:
+            return 9
+        else:
+            return 10
+
+
 
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
     source_data = json.load(open(source_path, 'r'))
 
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
+    statistics={}
+    statistics['qtype']=np.zeros(11)
     cy = []
-    x, cx, len_sentences, word_pos = [], [], [], []
+    x, cx, len_sentences, word_pos, question_type = [], [], [], [], []
     answerss = []
     p = []
     word_len = []
@@ -166,6 +193,8 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             for qa in para['qas']:
                 # get words
                 qi = word_tokenize(qa['question'])
+                qtypei = question_classify(qa['question'].lower())
+                statistics['qtype'][qtypei]=statistics['qtype'][qtypei]+1
                 cqi = [list(qij) for qij in qi]
                 max_qc = max([len(list(qij)) for qij in qi])
                 yi = []
@@ -204,6 +233,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
                 paragraph_len.append(len(xi))
                 word_len.append(max([max_qc, max_xc]))
                 question_len.append(len(qi))
+                question_type.append(qtypei)
                 answerss.append(answers)
 
             # TODO: Add debug option as in the original code
@@ -219,7 +249,7 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy, 'word_pos': word_pos,
-            'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len}
+            'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len, 'question_type': question_type}
     shared = {'x': x, 'cx': cx, 'p': p, 'len_sent': len_sentences,
               'word_counter': word_counter, 'word_counter_lower': word_counter_lower, 'char_counter': char_counter,
               'word2vec': word2vec_dict, 'char2vec': char2vec_dict}
