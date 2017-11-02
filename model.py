@@ -1063,8 +1063,8 @@ class Model(object):
                                         kernel_initializer=self.initializer,
                                         reuse=True,
                                         name='affine_op_X')
-            output_1 = tf.squeeze(output_1, 1)
-            output_2 = tf.squeeze(output_2, 1)
+            output_1 = tf.nn.dropout(tf.squeeze(output_1, 1), self.keep_prob_encoder)
+            output_2 = tf.nn.dropout(tf.squeeze(output_2, 1), self.keep_prob_encoder)
             output_1.set_shape([self.Bs, length_X1, out_size])
             output_1 = [X1_enc_out, output_1]
             output_2.set_shape([self.Bs, length_X2, out_size])
