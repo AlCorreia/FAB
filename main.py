@@ -126,9 +126,7 @@ def evaluate(config, model, data_dev):
         #If the last batch does not have batch_size samples, it adds some examples to complete batch_size:
         Start_Index, End_Index = model.evaluate(batch_idxs, data_dev)
         answer_dict = {**answer_dict, **get_answer(Start_Index,End_Index,batch_idxs, data_dev)}
-    source_path = os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format('dev'))
-    source_data = json.load(open(source_path, 'r'))
-    exact_match, f1 = evaluate_dev(source_data['data'], answer_dict)
+    exact_match, f1 = evaluate_dev(data_dev, answer_dict)
     return [exact_match, f1, sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev), sum(model.y2_greater_y1_correct)/len(model.y2_greater_y1_correct)]
 
 
