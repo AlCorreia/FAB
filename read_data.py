@@ -298,23 +298,23 @@ def read_data(config, data_type, data_filter=None, data_train=None):
     #WORD PRE-PROCESSING
         if config['pre']['finetune']: #false
             shared['unk_word2idx'] = {word: idx + 1 + number_of_unk + number_of_totens for idx, word in
-                              enumerate(word for word, count in word_counter.items()
+                              enumerate(word for word, count in sorted(word_counter.items())
                                             if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
         else:
             assert config['pre']['known_if_glove']
             assert config['pre']['use_glove_for_unk']
             shared['unk_word2idx'] = {word: idx + 1+number_of_unk + number_of_totens for idx, word in #add 2 to UNK and NULL
-                                  enumerate(word for word, count in word_counter.items()
+                                  enumerate(word for word, count in sorted(word_counter.items())
                                             if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
 
         #CHAR PRE-PROCESSING
         if config['model']['pre_trained_char']:
             shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                      enumerate(char for char, count in char_counter.items()
+                                      enumerate(char for char, count in sorted(char_counter.items())
                                                 if count > config['pre']['char_count_th'] and char not in char2vec_dict)} #threshold =50
         else:
             shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                      enumerate(char for char, count in char_counter.items()
+                                      enumerate(char for char, count in sorted(char_counter.items())
                                                 if count > config['pre']['char_count_th'])} # threshold =50
 
         NULL = "-NULL-"
