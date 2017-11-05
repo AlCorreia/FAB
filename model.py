@@ -2003,10 +2003,9 @@ class Model(object):
                     char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
                                          axis=0)
                 else:  # There are not pre-trained characters
-                    init_char = tf.get_variable("char_emb_mat_init", dtype=tf.float32, shape=[self.CVs, self.CEs], initializer=self.initializer)
                     char_emb_mat = tf.get_variable(
                         "char_emb_mat",
-                        initializer=init_char*5.5)  # [CVs,CEs]
+                        initializer=tf.random_normal(shape=[self.CVs, self.CEs], mean=0.0, stddev=1.0, dtype=tf.float32))  # [CVs,CEs]
                 # Embedding of characters
                 Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
                 Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
