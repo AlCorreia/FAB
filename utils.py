@@ -99,6 +99,61 @@ def send_mail(attach_dir, subject,body):
         print("Unable to send the email. Error: ", sys.exc_info()[0])
 
 
+def plot_q_type(X, N, directory):
+    labels = ['what', 'which', 'who', 'hmany', 'hmuch', 'hlong', 'how', 'when', 'where', 'why', 'other']
+    size_X = len(X)
+
+    ind = np.arange(size_X)  # the x locations for the groups
+    width = 0.35       # the width of the bars
+
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(ind, X, width, color='g')
+
+    # add some text for labels, title and axes ticks
+    ax.set_ylabel('F1-Score (%)')
+    ax.set_title('F1-Score against Question Type')
+    ax.set_xticks(ind)
+    ax.set_xticklabels(labels, rotation='vertical')
+
+    ax.legend(rects1, ['FABIR'])
+
+    def autolabel(rects,N):
+        """
+        Attach a text label above each bar displaying its height
+        """
+        i = 0
+        for rect in rects:
+            height = rect.get_height()
+            ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                    '%d' % int(N[i]),
+                    ha='center', va='bottom')
+            i+=1
+
+    autolabel(rects1,N)
+    plt.savefig(directory)
+
+def plot_line(Y, plot_type, directory):
+    fig, ax = plt.subplots()
+    size_Y = len(Y)
+    ind = np.arange(size_Y)
+    if plot_type == 'par_len':
+        xlabel='Passage Length'
+        labels = ['60','100','140','180','220', '260','>260']
+    elif plot_type == 'q_len':
+        xlabel='Question Length'
+        labels =  ['7','11','15','19','>19']
+    elif plot_type == 'ans_len':
+        xlabel='Answer Length'
+        labels =  ['1','2','3','4','5','6','7','8','9','10', '>10']
+    plt.plot(ind,Y, 'go', ind,Y, 'g')
+    ax.set_xticks(ind)
+    ax.set_xticklabels(labels, rotation='vertical')
+    ax.set_ylabel('F1-Score (%)')
+    ax.set_xlabel(xlabel)
+    ax.set_title('F1-Score against '+xlabel)
+    plt.grid()
+    plt.savefig(directory)
+
 def plot(X, EM, F1, save_dir):
     f, axarr = plt.subplots(2, sharex=True)
     axarr[0].plot(X, EM[0], label='train')

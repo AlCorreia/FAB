@@ -8,6 +8,8 @@ import numpy as np
 import pdb
 import json
 import sys
+import matplotlib.pyplot as plt
+from utils import plot_q_type, plot_line
 
 
 def normalize_answer(s):
@@ -61,10 +63,10 @@ def update_statistics(EM_F1, classifier, statistics):
     return statistics
 
 def create_statistics():
-    par_len_size = 14
+    par_len_size = 7
     q_type_size = 11
-    q_len_size = 10
-    ans_size = 21
+    q_len_size = 5
+    ans_size = 11
     statistics = {'par_len':{'n':np.zeros(par_len_size), 'EM':np.zeros(par_len_size), 'F1':np.zeros(par_len_size)},
                'q_type': {'n':np.zeros(q_type_size), 'EM':np.zeros(q_type_size), 'F1':np.zeros(q_type_size)},
                'q_len': {'n':np.zeros(q_len_size), 'EM':np.zeros(q_len_size), 'F1':np.zeros(q_len_size)},
@@ -77,7 +79,7 @@ def question_classifier(data, index):
     classifier['q_type'] = data['question_type'][index]
     #size of passage
     par_len = data['paragraph_len'][index]
-    par_lens = [30,60,90,120,150,180,210,240,270,300,330,360,390]
+    par_lens = [60,100,140,180,220,260]
     for i in range(len(par_lens)):
         if par_len <=par_lens[i]:
             classifier['par_len'] = i
@@ -86,24 +88,24 @@ def question_classifier(data, index):
          classifier['par_len'] = len(par_lens) #longer than 390
     #size of question
     q_len = data['question_len'][index]
-    q_lens = [5,10,15,20,25,30,35,40,45]
+    q_lens = [7,11,15,19]
     for i in range(len(q_lens)):
         if q_len <=q_lens[i]:
             classifier['q_len'] = i
             break
     if not ('q_len' in classifier):
-         classifier['q_len'] = len(q_lens) #longer than 390
+         classifier['q_len'] = len(q_lens) #longer than 45
     #size of answer
-    answer = data['y'][i]
-    f = lambda x: x[1]-x[0]+1
+    answer = data['y'][index]
+    f = lambda x: x[1]-x[0]
     answer_len = min(list(map(f,answer)))
-    answer_lens = list(range(20))
+    answer_lens = list(range(1,11))
     for i in range(len(answer_lens)):
         if answer_len <=answer_lens[i]:
             classifier['ans_len'] = i
             break
     if not ('ans_len' in classifier):
-         classifier['ans_len'] = len(answer_lens) #longer than 390
+         classifier['ans_len'] = len(answer_lens) #longer than 10
     return classifier
 
 def evaluate(dataset, predictions):
@@ -123,7 +125,10 @@ def evaluate(dataset, predictions):
         statistics = update_statistics([EM_i,f1_i], classifier, statistics)
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
-
+    plot_q_type(X = 100*statistics['q_type']['F1']/statistics['q_type']['n'], N = statistics['q_type']['n'], directory='./q_type.png') #Plotting q_type
+    plot_line(Y=100*statistics['par_len']['F1']/statistics['par_len']['n'], plot_type='par_len', directory='./par_len.png')
+    plot_line(Y=100*statistics['q_len']['F1']/statistics['q_len']['n'], plot_type='q_len', directory='./q_len.png')
+    plot_line(Y=100*statistics['ans_len']['F1']/statistics['ans_len']['n'], plot_type='ans_len', directory='./ans_len.png')
     return exact_match, f1
 
 
