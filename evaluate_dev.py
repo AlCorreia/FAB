@@ -132,7 +132,6 @@ def evaluate(dataset, predictions, out_folder):
     plot_line(Y=100*statistics['ans_len']['F1']/statistics['ans_len']['n'], plot_type='ans_len', directory=out_folder+'ans_len.png')
     with open(out_folder+'statistics.pkl', 'wb') as f:
         pickle.dump(statistics, f)
-    pdb.set_trace()
     return exact_match, f1
 
 
