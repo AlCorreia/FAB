@@ -183,26 +183,47 @@ if __name__ == '__main__':
             config['model']['char_embedding'] = False
             config['model']['name'] = 'Exp 01: No char Embedding'
             config['directories']['target_dir'] = './exp/exp01/'
+        if FLAGS.exp ==2: #No layer reduction
+            config['model']['one_layer_reduction'] = False
+            config['model']['matrix_reduction'] = True
+            config['model']['n_pre_layer'] = 4
+            config['model']['name'] = 'Exp 02: Matrix reduction instead of layer reduction. 4 Layer to compensate reduction'
+            config['directories']['target_dir'] = './exp/exp01/'
         elif FLAGS.exp == 3: #2 layers
             config['model']['n_pre_layer'] = 2
             config['model']['name'] = 'Exp 03: 2 layers'
             config['directories']['target_dir'] = './exp/exp03/'
         elif FLAGS.exp == 4: #4 layers
-            config['model']['n_pre_layer'] = 4
             config['model']['name'] = 'Exp 04: 4 layers'
+            config['model']['n_pre_layer'] = 4
             config['directories']['target_dir'] = './exp/exp04/'
         elif FLAGS.exp == 5: #2 heads
-            config['model']['multi_head_size'] = 2
             config['model']['name'] = 'Exp 05: 2 Heads'
+            config['model']['multi_head_size'] = 2
             config['directories']['target_dir'] = './exp/exp05/'
-        elif FLAGS.exp == 7: #2 heads
+        elif FLAGS.exp == 6: #Convolution with kernel =1
+            config['model']['name'] = 'Exp 06: Double Conv with Kernel=1'
+            config['model']['y1_sel'] = 'double_conv'
+            config['model']['conv_selector_kernel_size'] = 1
+            config['model']['name'] = 'Exp 06: Double Conv Kernel_size = 1'
+            config['directories']['target_dir'] = './exp/exp06/'
+        elif FLAGS.exp == 7: #Linear Selector
+            config['model']['name'] = 'Exp 07: Linear Selector'
             config['model']['y1_sel'] = 'linear'
             config['model']['y2_sel'] = 'linear'
-            config['model']['name'] = 'Exp 07: Linear Selector'
             config['directories']['target_dir'] = './exp/exp07/'
-        elif FLAGS.exp == 8: #2 heads
+        elif FLAGS.exp == 8: #No Single Loss
+            config['model']['name'] = 'Exp 08: Original Loss'
             config['model']['single_loss'] = False
+            config['model']['no_masking_loss_computation']=True
             config['directories']['target_dir'] = './exp/exp08/'
+        elif FLAGS.exp == 9: #y1 and y2 in different layers
+            config['model']['name'] = 'Exp 09: Convolution in different layers: 2 (y1) and 3 (y2)'
+            config['model']['y1_sel'] = 'conv'
+            config['model']['y2_sel'] = 'conv'
+            config['model']['n_pre_layer'] = 2
+            config['model']['n_post_layer'] = 1
+            config['directories']['target_dir'] = './exp/exp09/'
         else:
             raise error("NO EXPERIMENT SELECTED")
     print(config['model']['name'])

@@ -72,9 +72,11 @@
 		"encode_char_and_vec_separately":false,
                 "encoder_scaling":false,
 		"one_layer_reduction":true,
+		"matrix_reduction":false,
 		"reduced_layer_dropout_amplification":2.0,
 		"second_loss":false,
 		"single_loss":true,
+		"no_masking_loss_computation":true,
 		"number_of_totens":0,
 		"memory":false,
 		"memory_size":100,
@@ -85,9 +87,10 @@
 		"sentence_masking": false,
 		"conv_attention":"all",
 		"conv_attention_kernel":"original",
-		"conv_attention_kernel_size":"5,5",
+		"conv_attention_kernel_size":"1,5,1,5",
 		"max_answer_size": 15,
 		"y1_sel":"double_conv",
+		"conv_selector_kernel_size":9,
         	"y2_sel":"conv2"
 	},
 	"train":{

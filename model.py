@@ -1440,7 +1440,6 @@ class Model(object):
 
     def _linear_sel(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
-        #length_X = X.get_shape()[1]
         with tf.variable_scope(scope):
             length_X = X.get_shape()[1]
             X = tf.expand_dims(X, 2)
@@ -1491,24 +1490,57 @@ class Model(object):
                                tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
         return output, logits
 
-    def _conv_sel(self, X, mask, scope, size_input):
+    def _conv_1D(self, X, scope, emb_in, emb_out, kernel_size, reuse, activation=None, padding='same', use_bias=True):
         """ Select one vector among n vectors by max(w*X) """
         length_X = X.get_shape()[1]
+        X = tf.expand_dims(X, 1)
+        X.set_shape([self.Bs, 1, length_X, emb_in])
+        conv_out = tf.squeeze(tf.layers.conv2d(X,
+                                  filters=emb_out,
+                                  kernel_size=kernel_size,
+                                  strides=1,
+                                  padding=padding,
+                                  use_bias=use_bias,
+                                  activation=activation,
+                                  kernel_initializer=self.initializer,
+                                  reuse=reuse,
+                                  name=scope))
+        X = tf.squeeze(X)
+        X.set_shape([self.Bs, length_X, emb_in])
+        return conv_out
+
+
+    def _conv_sel(self, X, mask, scope, size_input):
+        """ Select one vector among n vectors by max(w*X) """
         with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, size_input])
-            logits = tf.layers.conv2d(X,
+            length_X = X.get_shape()[1]
+            X = tf.expand_dims(X, 2)
+            X.set_shape([self.Bs, length_X, 1, size_input])
+            logits_hidden = tf.layers.conv2d(X,
+                                      filters=32,
+                                      kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
+                                      strides=1,
+                                      padding='same',
+                                      use_bias=True,
+                                      activation=tf.nn.relu,
+                                      kernel_initializer=self.initializer,
+                                      name='conv_sel')
+            logits_drop = tf.nn.dropout(logits_hidden, keep_prob=self.keep_prob_selector)
+            logits_out = tf.squeeze(tf.layers.conv2d(logits_drop,
                                       filters=1,
-                                      kernel_size=(7, 1),
+                                      kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
                                       kernel_initializer=self.initializer,
-                                      name='conv_sel')
-            logits = tf.reshape(logits, [self.Bs, -1])
+                                      name='conv_sel_2'))
+            X = tf.squeeze(X)
+            X.set_shape([self.Bs, length_X, size_input])
             output = tf.nn.softmax(
-                        tf.add(logits,
+                        tf.add(logits_out,
                                tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-        return output, logits
+
+        return output, logits_out
 
     def _conv_sel_2(self, X, y1_sel, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
@@ -1563,7 +1595,7 @@ class Model(object):
             X = tf.reshape(X, [self.Bs, -1, 1, size_input])
             logits = tf.layers.conv2d(X,
                                       filters=32,
-                                      kernel_size=(9, 1),
+                                      kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
@@ -1573,7 +1605,7 @@ class Model(object):
             logits = tf.nn.dropout(logits, keep_prob=self.keep_prob_selector)
             logits = tf.layers.conv2d(logits,
                                       filters=2,
-                                      kernel_size=(9, 1),
+                                      kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
                                       strides=1,
                                       padding='same',
                                       use_bias=True,
@@ -1586,6 +1618,7 @@ class Model(object):
             output1, output2 = self._process_logits(logits1, logits2, mask)
 
         return output1, logits1, output2, logits2
+
 
     def _all_layers_sel(self, Q, X, mask, scope, size_input):
         with tf.variable_scope(scope):
@@ -1687,28 +1720,6 @@ class Model(object):
 
         return output1, logits1, output2, logits2
 
-    def _direct(self, X, mask, scope):
-        with tf.variable_scope(scope):
-            logits = tf.reshape(X, [self.Bs, -1, self.WEAs])
-            logits = tf.reduce_sum(logits, axis=-1)
-            output = tf.nn.softmax(
-                        tf.add(logits,
-                               tf.multiply(1.0 - mask['x'], VERY_LOW_NUMBER)))
-        return output, logits
-
-    def _direct_2(self, X, y1_sel, mask, scope):
-        with tf.variable_scope(scope):
-            y1_selected = tf.cast(tf.expand_dims(tf.argmax(y1_sel, axis=1),1), tf.int32)
-            range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
-            mask_new = tf.cast(tf.round(tf.cast(tf.less(y1_selected-1,range_x), tf.float32) + mask['x']-1.0), tf.float32)
-            self.y2_corrected = tf.multiply(self.y2, mask_new)
-            logits = tf.reshape(X, [self.Bs, -1, self.WEAs])
-            logits = tf.reduce_sum(logits, axis=-1)
-            output = tf.nn.softmax(
-                        tf.add(logits,
-                               tf.multiply(1.0 - mask_new, VERY_LOW_NUMBER)))
-        return output, logits
-
     def _process_logits(self, logits1, logits2, mask):
         range_x = tf.expand_dims(tf.range(0, self.max_size_x[-1], 1), 0)
         def f1():
@@ -1730,7 +1741,7 @@ class Model(object):
             return mask1, mask2
         if self.config['model']['alternating_y1_y2']:
             mask1, mask2 = tf.cond(tf.equal(tf.floormod(self.global_step, 2), 0), f1, f2)
-        elif self.config['model']['single_loss']:
+        elif self.config['model']['single_loss'] or self.config['model']['no_masking_loss_computation']:
             mask1 = mask2 = tf.cast(mask['x'], tf.float32)
         else:
             mask1, mask2 = f1()
@@ -1931,10 +1942,6 @@ class Model(object):
             output, logits = self._conv_sel(X, mask, scope, size_input)
         elif method == "conv2":
             output, logits = self._conv_sel_2(X, y1_sel, mask, scope, size_input)
-        elif method == "direct":
-            output, logits = self._direct(X, mask, scope)
-        elif method == "direct2":
-            output, logits = self._direct_2(X, y1_sel, mask, scope)
         return output, logits
 
     def _get_layer_func(self, ID):
@@ -2063,7 +2070,6 @@ class Model(object):
                     Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs, self.WEAs]  # size of q attention model/q processing size/size of x attention model/number of heads/output_size of X4
                     X_Cs = Q_Cs
                     q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs) #It is already encoded
-
                 elif ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                     # An encoder for char and word are defined separetely
                     x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
@@ -2075,6 +2081,25 @@ class Model(object):
                     x_scaled = tf.concat([x_word_enc, x_char_enc], axis=2)
                     q_scaled = tf.concat([q_word_enc, Acq_wordq_char_enc], axis=2)
                 else:  # An encoder for char and word are defined together
+                    if self.config['model']['matrix_reduction']:
+                        x_scaled = self._conv_1D(x_scaled,
+                                             scope='matrix_reduction',
+                                             emb_in=self.WEOs+self.COs,
+                                             emb_out=self.WEAs,
+                                             kernel_size=[1,1],
+                                             reuse=False,
+                                             activation=None,
+                                             padding='same',
+                                             use_bias=True)
+                        q_scaled = self._conv_1D(q_scaled,
+                                             scope='matrix_reduction',
+                                             emb_in=self.WEOs+self.COs,
+                                             emb_out=self.WEAs,
+                                             kernel_size=[1,1],
+                                             reuse=True,
+                                             activation=None,
+                                             padding='same',
+                                             use_bias=True)
                     len_q = tf.shape(self.q)[1]
                     len_x = tf.shape(self.x)[1]
                     q_enc = tf.zeros(shape=[self.Bs,len_q,self.WEAs], dtype=tf.float32)
