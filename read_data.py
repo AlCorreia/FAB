@@ -81,8 +81,8 @@ def save(config, data, shared, data_type):
         Save json files for dictionaries data and shared to the directory
         specified in config.
     """
-    data_path = os.path.join(config['directories']['target_dir'], "data_{}.json".format(data_type))
-    shared_path = os.path.join(config['directories']['target_dir'], "shared_{}.json".format(data_type))
+    data_path = os.path.join(config['directories']['dir'], "data_{}.json".format(data_type))
+    shared_path = os.path.join(config['directories']['dir'], "shared_{}.json".format(data_type))
     json.dump(data, open(data_path, 'w'))
     json.dump(shared, open(shared_path, 'w'))
 

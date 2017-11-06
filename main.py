@@ -126,13 +126,18 @@ def evaluate(config, model, data_dev):
         #If the last batch does not have batch_size samples, it adds some examples to complete batch_size:
         Start_Index, End_Index = model.evaluate(batch_idxs, data_dev)
         answer_dict = {**answer_dict, **get_answer(Start_Index,End_Index,batch_idxs, data_dev)}
-    exact_match, f1 = evaluate_dev(data_dev, answer_dict)
+    exact_match, f1 = evaluate_dev(data_dev, answer_dict, config['directories']['target_dir'])
     return [exact_match, f1, sum(model.y1_correct_dev)/len(model.y1_correct_dev), sum(model.y2_correct_dev)/len(model.y2_correct_dev), sum(model.y2_greater_y1_correct)/len(model.y2_greater_y1_correct)]
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    parser.add_argument(
+        '--exp', '-e',
+        type=int,
+        default=-1
+    )
     parser.add_argument(
         '--dropout', '-d',
         type=str,
@@ -167,4 +172,31 @@ if __name__ == '__main__':
         config['model']["sentence_skip_steps"] = FLAGS.encoder_skip
     if FLAGS.nsteps != -1:
         config['train']['steps'] = FLAGS.nsteps
+    if FLAGS.exp != -1:
+        print("Running Experiment "+str(FLAGS.exp))
+        config['train']['steps'] = 21100
+        config['train']['steps_to_email'] = 21000
+        if FLAGS.exp ==0: #no char embedding
+            config['model']['name'] = 'Exp 00: FABIR - O MELHOR'
+        if FLAGS.exp ==1: #no char embedding
+            config['model']['char_embedding'] = False
+            config['model']['name'] = 'Exp 01: No char Embedding'
+        elif FLAGS.exp == 3: #2 layers
+            config['model']['n_pre_layer'] = 2
+            config['model']['name'] = 'Exp 03: 2 layers'
+        elif FLAGS.exp == 4: #4 layers
+            config['model']['n_pre_layer'] = 4
+            config['model']['name'] = 'Exp 04: 4 layers'
+        elif FLAGS.exp == 5: #2 heads
+            config['model']['multi_head_size'] = 2
+            config['model']['name'] = 'Exp 05: 2 Heads'
+        elif FLAGS.exp == 7: #2 heads
+            config['model']['y1_sel'] = 'linear'
+            config['model']['y2_sel'] = 'linear'
+            config['model']['name'] = 'Exp 07: Linear Selector'
+        elif FLAGS.exp == 8: #2 heads
+            config['model']['single_loss'] = False
+        else:
+            raise error("NO EXPERIMENT SELECTED")
+    print(config['model']['name'])
     main(config)

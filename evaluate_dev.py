@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 import pdb
 import json
+import pickle #for saving python dictionary
 import sys
 import matplotlib.pyplot as plt
 from utils import plot_q_type, plot_line
@@ -108,7 +109,7 @@ def question_classifier(data, index):
          classifier['ans_len'] = len(answer_lens) #longer than 10
     return classifier
 
-def evaluate(dataset, predictions):
+def evaluate(dataset, predictions, out_folder):
     statistics = create_statistics()
     f1 = exact_match = total = 0
     total = len(dataset['data']['q'])
@@ -125,13 +126,16 @@ def evaluate(dataset, predictions):
         statistics = update_statistics([EM_i,f1_i], classifier, statistics)
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
-    plot_q_type(X = 100*statistics['q_type']['F1']/statistics['q_type']['n'], N = statistics['q_type']['n'], directory='./q_type.png') #Plotting q_type
-    plot_line(Y=100*statistics['par_len']['F1']/statistics['par_len']['n'], plot_type='par_len', directory='./par_len.png')
-    plot_line(Y=100*statistics['q_len']['F1']/statistics['q_len']['n'], plot_type='q_len', directory='./q_len.png')
-    plot_line(Y=100*statistics['ans_len']['F1']/statistics['ans_len']['n'], plot_type='ans_len', directory='./ans_len.png')
+    plot_q_type(X = 100*statistics['q_type']['F1']/statistics['q_type']['n'], N = statistics['q_type']['n'], directory=out_folder+'q_type.png') #Plotting q_type
+    plot_line(Y=100*statistics['par_len']['F1']/statistics['par_len']['n'], plot_type='par_len', directory=out_folder+'par_len.png')
+    plot_line(Y=100*statistics['q_len']['F1']/statistics['q_len']['n'], plot_type='q_len', directory=out_folder+'q_len.png')
+    plot_line(Y=100*statistics['ans_len']['F1']/statistics['ans_len']['n'], plot_type='ans_len', directory=out_folder+'ans_len.png')
+    with open(out_folder+'statistics.pkl', 'wb') as f:
+        pickle.dump(statistics, f)
+    pdb.set_trace()
     return exact_match, f1
 
 
-def evaluate_dev(dataset, predictions):
-    exact_match, f1 = evaluate(dataset, predictions)
+def evaluate_dev(dataset, predictions, out_folder):
+    exact_match, f1 = evaluate(dataset, predictions, out_folder)
     return  exact_match, f1

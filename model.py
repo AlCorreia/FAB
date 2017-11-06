@@ -34,7 +34,7 @@ class Model(object):
         self.config = config
         # Define the directory where the results will be saved
         # TODO: Define a better convention for directories names
-        self.directory = config['directories']['dir']
+        self.directory = config['directories']['target_dir']
         self.dir_plots = config['directories']['plots']
         # Define global step and learning rate decay
         self.global_step = tf.Variable(0, trainable=False)
@@ -302,7 +302,7 @@ class Model(object):
 
     def _load(self):  # To load a checkpoint
         # TODO: Add structure to save/load different checkpoints.
-        self.saver.restore(self.sess, self.directory + 'model.ckpt')
+        self.saver.restore(self.sess, self.config['directories']['dir'] + 'model.ckpt')
 
     def evaluate_all_dev(self, valid_idxs, data_dev):
         """ Compute F1 and EM for the dev dataset
