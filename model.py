@@ -533,8 +533,8 @@ class Model(object):
         # Q = X1*WQ, K = X2*WK, V=X1*WV, X2 = X1 if X1 is None
         keep_prob_attention = tf.pow(self.keep_prob_attention,dropout)
         keep_prob_concat = tf.pow(self.keep_prob_concat,dropout)
-        keep_prob_pre_softmax = tf.pow(self.keep_prob_attention_pre_softmax,dropout)
-        keep_prob_post_softmax = tf.pow(self.keep_prob_attention_post_softmax,dropout)
+        keep_prob_pre_softmax = self.keep_prob_attention_pre_softmax
+        keep_prob_post_softmax = self.keep_prob_attention_post_softmax
 
         with tf.variable_scope(scope, reuse=reuse):
             length_X1 = X1.get_shape()[1]
@@ -750,7 +750,7 @@ class Model(object):
                                                    kernel_initializer=self.initializer,
                                                    use_bias=False,
                                                    padding='same',
-                                                   reuse=False,
+                                                   reuse=reuse,
                                                    name='Conv_att_Comp')
 
                 logits = conv_logits

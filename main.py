@@ -226,6 +226,9 @@ if __name__ == '__main__':
         elif FLAGS.exp == 4: #4 layers
             config['model']['name'] = 'Exp 04: 4 layers'
             config['model']['n_pre_layer'] = 4
+            config['train']['batch_size']=60
+            config['train']['steps']=27100
+            config['train']['steps_to_email']=27000
             config['directories']['target_dir'] = './exp/exp04/'
         elif FLAGS.exp == 5: #2 heads
             config['model']['name'] = 'Exp 05: 2 Heads'
@@ -254,6 +257,10 @@ if __name__ == '__main__':
             config['model']['n_pre_layer'] = 2
             config['model']['n_post_layer'] = 1
             config['directories']['target_dir'] = './exp/exp09/'
+        elif FLAGS.exp == 10: #No attention convolution
+            config['model']['name'] = 'Exp 10: No Convolutional Attention'
+            config['model']['conv_attention']='None'
+            config['directories']['target_dir'] = './exp/exp10/'
         else:
             raise error("NO EXPERIMENT SELECTED")
     config['model']['name'] = config['model']['name']+extra_name
