@@ -145,11 +145,32 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--learningrate', '-lr',
+        type=float,
+        default=0.5
+    )
+
+    parser.add_argument(
+        '--batchsize', '-bs',
+        type=int,
+        default=75
+    )
+
+
+    parser.add_argument(
         '--nsteps', '-st',
         type=int,
         default=-1,
         help="Number of iterations to run"
     )
+
+    parser.add_argument(
+        '--mailsteps', '-ms',
+        type=int,
+        default=-1,
+        help="Number of iterations to run"
+    )
+
 
     parser.add_argument(
         '--encoder_skip', '-s',
@@ -159,9 +180,16 @@ if __name__ == '__main__':
     )
 
     FLAGS, unparsed = parser.parse_known_args()
-
+    extra_name = ''
     with open('config.json') as json_data_file:
         config = json.load(json_data_file)
+    if FLAGS.learningrate is not '0.5':
+        print('LR: '+str(FLAGS.learningrate))
+        config['train']['Adam']['learning_rate'] = FLAGS.learningrate
+        extra_name = extra_name+' LR: '+str(FLAGS.learningrate)
+    if FLAGS.batchsize is not 75:
+        print('Batch Size: '+str(FLAGS.batchsize))
+        extra_name = extra_name+' Bs: '+str(FLAGS.batchsize)
     if FLAGS.dropout is not '':
         config['train']['dropout_encoder'] = FLAGS.dropout
         config['train']['dropout_attention'] = FLAGS.dropout
@@ -172,6 +200,8 @@ if __name__ == '__main__':
         config['model']["sentence_skip_steps"] = FLAGS.encoder_skip
     if FLAGS.nsteps != -1:
         config['train']['steps'] = FLAGS.nsteps
+    if FLAGS.mailsteps != -1:
+        config['train']['steps_to_email'] = FLAGS.mailsteps
     if FLAGS.exp != -1:
         print("Running Experiment "+str(FLAGS.exp))
         config['train']['steps'] = 21100
@@ -179,11 +209,11 @@ if __name__ == '__main__':
         if FLAGS.exp ==0: #no char embedding
             config['model']['name'] = 'Exp 00: FABIR - O MELHOR'
             config['directories']['target_dir'] = './exp/exp00/'
-        if FLAGS.exp ==1: #no char embedding
+        elif FLAGS.exp ==1: #no char embedding
             config['model']['char_embedding'] = False
             config['model']['name'] = 'Exp 01: No char Embedding'
             config['directories']['target_dir'] = './exp/exp01/'
-        if FLAGS.exp ==2: #No layer reduction
+        elif FLAGS.exp ==2: #No layer reduction
             config['model']['one_layer_reduction'] = False
             config['model']['matrix_reduction'] = True
             config['model']['n_pre_layer'] = 4
@@ -226,5 +256,6 @@ if __name__ == '__main__':
             config['directories']['target_dir'] = './exp/exp09/'
         else:
             raise error("NO EXPERIMENT SELECTED")
+    config['model']['name'] = config['model']['name']+extra_name
     print(config['model']['name'])
     main(config)
