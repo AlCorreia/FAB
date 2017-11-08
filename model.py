@@ -989,7 +989,7 @@ class Model(object):
             FF_X1X1 = self._layer_normalization(
                                     tf.add(att_layer_X1X1,
                                            self._FeedForward_NN(att_layer_X1X1,
-                                                          'FF' + X1X1,
+                                                          'FF_' + X1X1,
                                                            comp_size=X1_comp_size,
                                                            dropout=self.config['model']['reduced_layer_dropout_amplification'])),
                                     scope='norm_FF_'+X1X1,
@@ -1034,7 +1034,8 @@ class Model(object):
                                            self._FeedForward_NN(att_layer_X1X2,
                                                                 'FF_' + X2X2,
                                                                 comp_size=X2_comp_size,
-                                                                dropout=self.config['model']['reduced_layer_dropout_amplification'])),
+                                                                dropout=self.config['model']['reduced_layer_dropout_amplification'],
+                                                                reuse=False)),
                                     scope='norm_FF_' + X2X2,
                                     shape=X2_comp_size[0])
 
@@ -1116,7 +1117,7 @@ class Model(object):
             FF_X1X1 = self._layer_normalization(
                                     tf.add(att_layer_X1X1,
                                            self._FeedForward_NN(att_layer_X1X1,
-                                                          'FF' + X1X1,
+                                                          'FF_' + X1X1,
                                                            comp_size=X1_comp_size,
                                                            reuse=False)),
                                     scope='norm_FF_'+X1X1,
@@ -1159,7 +1160,8 @@ class Model(object):
                                     tf.add(att_layer_X1X2,
                                            self._FeedForward_NN(att_layer_X1X2,
                                                                 'FF_' + X2X2,
-                                                                comp_size=X2_comp_size)),
+                                                                comp_size=X2_comp_size,
+                                                                reuse=False)),
                                     scope='norm_FF_' + X2X2,
                                     shape=X2_comp_size[0])
 
@@ -1201,7 +1203,7 @@ class Model(object):
             output_1 = FF_X1X1 = self._layer_normalization(
                                     tf.add(att_layer_X1X1,
                                            self._FeedForward_NN(att_layer_X1X1,
-                                                          'FF' + X1X1,
+                                                          'FF_' + X1X1,
                                                            comp_size=X1_comp_size)),
                                     scope='norm_FF_'+X1X1)
 
@@ -1209,9 +1211,10 @@ class Model(object):
                                 tf.add(X2,
                                        self._attention_layer(X1=X2,
                                                        mask=mask[X2X2],
-                                                       scope=X2X2,
-                                                       comp_size=X2_comp_size,
-                                                       sentence_masking=X2_masking)),
+                                                       scope=X1X1,
+                                                       comp_size=X1_comp_size,
+                                                       sentence_masking=X2_masking,
+                                                       reuse=True)),
                                 scope='norm_' + X2X2)
             if self.config['model']['number_of_cross_attentions']>0:
                 cross_out_X1 = self._proc_cross_layer(FF_X1X1, 'cross_prepare_att', X1_comp_size)
@@ -1234,7 +1237,8 @@ class Model(object):
                                     tf.add(att_layer_X1X2,
                                            self._FeedForward_NN(att_layer_X1X2,
                                                                 'FF_' + X2X2,
-                                                                comp_size=X2_comp_size)),
+                                                                comp_size=X1_comp_size,
+                                                                reuse=False)),
                                     scope='norm_FF_' + X2X2)
             if switch:
                 return output_2, output_1
