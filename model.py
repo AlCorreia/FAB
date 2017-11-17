@@ -447,7 +447,7 @@ class Model(object):
             output_highway = tf.squeeze(input_layer)
         return output_highway
 
-    def _encoder(self, X, Q, input_size, sentence_skip=False):
+    def _encoder(self, X, Q, input_size, sentence_skip=False, reuse=False):
         # Compute the number of words in passage and question
         size_x = tf.shape(X)[-2]
         size_q = tf.shape(Q)[-2]
@@ -497,11 +497,7 @@ class Model(object):
 
         # Concatenate both values
         encoder_x = tf.concat([encoder_sin_x, encoder_cos_x], axis=axis_concat)
-        if self.config['model']['encoder_scaling']:
-            w = tf.get_variable('weight_encoder', shape =[1], dtype=tf.float32, initializer=tf.ones_initializer())
-            encoder = w*encoder
-        # Computes the encoder values for x and q
-
+      
         if self.config['model']['encoder_no_cross']:
             # If no cross attention between encoders is desired
             freq_q_sum = tf.add(
@@ -513,7 +509,12 @@ class Model(object):
                                         freq_q_sum)
         encoder_sin_q = tf.sin(encoder_angles_q)
         encoder_cos_q = tf.cos(encoder_angles_q)
-        encoder_q = tf.concat([encoder_sin_q,encoder_cos_q], axis=1)
+        encoder_q = tf.concat([encoder_sin_q,encoder_cos_q], axis=1) 
+        if self.config['model']['encoder_scaling']:
+            with tf.variable_scope('Encoder', reuse=reuse):
+                w = tf.get_variable('weight_encoder', shape =[1], dtype=tf.float32, initializer=tf.ones_initializer())
+                encoder_x = w*encoder_x
+                encoder_q = w*encoder_q
 
     # Encoding x and q
         x_encoded = tf.add(X, encoder_x)
@@ -966,7 +967,7 @@ class Model(object):
             len_X2 = tf.shape(X2)[1]
             X1_enc_red = tf.zeros(shape=[self.Bs,len_X1,self.WEAs], dtype=tf.float32)
             X2_enc_red = tf.zeros(shape=[self.Bs,len_X2,self.WEAs], dtype=tf.float32)
-            X2_enc_red, X1_enc_red = self._encoder(X2_enc_red, X1_enc_red, out_size, sentence_skip = self.sentence_skip)
+            X2_enc_red, X1_enc_red = self._encoder(X2_enc_red, X1_enc_red, out_size, sentence_skip = self.sentence_skip, reuse=True)
             X1_enc = tf.nn.dropout(X1_enc, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']-1))
             X2_enc = tf.nn.dropout(X2_enc, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']-1))
             X2 = tf.nn.dropout(X2, tf.pow(self.keep_prob_encoder, self.config['model']['reduced_layer_dropout_amplification']))
