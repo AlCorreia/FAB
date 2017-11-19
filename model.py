@@ -333,7 +333,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
         if self.config['model']['sigmoid_loss']:
-            index_prob_out = self.sess.run([self.prob_out], feed_dict=feed_dict)
+            index_prob_out, y_prob_out = self.sess.run([self.prob_out, self.yp], feed_dict=feed_dict)
             Start_Index, End_Index, prob = maxSubArraySum(index_prob_out)
         else:
             Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
@@ -2238,6 +2238,8 @@ class Model(object):
         if self.config['model']['sigmoid_loss']:
             epsilon = 1e-4
             self.prob_out = (self.yp+epsilon)/(1-self.yp+epsilon)
+            self.Tensors_out['yp'] = self.yp
+            self.Tensors_out['prob'] = self.prob_out
         else:
             if self.config['model']['max_answer_size'] >0:
                 self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
@@ -2407,8 +2409,8 @@ class Model(object):
         """
         # Calculate the loss for y1 and y2
         if self.config['model']['sigmoid_loss']:
-            self.yp = tf.clip_by_value(tf.abs(self.yp - tf.cast(self.y_mask, tf.float32)),1e-10,1.0)
-            ce_loss3 = -tf.reduce_mean(tf.reduce_sum(self.y_abs*tf.log(self.yp),1),0)
+            y_cp = tf.clip_by_value(tf.abs(self.yp - tf.cast(self.y_mask, tf.float32)),1e-10,1.0)
+            ce_loss3 = -tf.reduce_mean(tf.reduce_sum(self.y_abs*tf.log(y_cp),1),0)
             # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = ce_loss3
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
