@@ -256,7 +256,7 @@ class Model(object):
         feed_dict['dropout_last_layer_passage:0'] = self.config['train']['dropout_last_layer_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             if self.config['model']['sigmoid_loss']:
-                summary, _, loss_val, global_step, max_x, max_q, index_prob_out,tensors_out = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.y, self.Tensors_out],
+                summary, _, loss_val, global_step, max_x, max_q, index_prob_out,tensors_out = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.yp, self.Tensors_out],
                                        feed_dict=feed_dict)
                 Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
             else:
@@ -276,7 +276,7 @@ class Model(object):
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
             if self.config['model']['sigmoid_loss']:
-                index_prob_out, _ = self.sess.run([self.y, self.train_step], feed_dict=feed_dict)
+                index_prob_out, _ = self.sess.run([self.yp, self.train_step], feed_dict=feed_dict)
                 Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
             else:
                 Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index, self.train_step], feed_dict=feed_dict)
@@ -297,7 +297,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
         if self.config['model']['sigmoid_loss']:
-            summary, max_x, max_q, global_step, Tensors_out, index_prob_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.global_step, self.Tensors_out, self.y], feed_dict=feed_dict)
+            summary, max_x, max_q, global_step, Tensors_out, index_prob_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.global_step, self.Tensors_out, self.yp], feed_dict=feed_dict)
             Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
         else:
             summary, max_x, max_q, Start_Index, End_Index, global_step, Tensors_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step, self.Tensors_out], feed_dict=feed_dict)
@@ -327,7 +327,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
         if self.config['model']['sigmoid_loss']:
-            index_prob_out = self.sess.run([self.y], feed_dict=feed_dict)
+            index_prob_out = self.sess.run([self.yp], feed_dict=feed_dict)
             Start_Index, End_Index, prob = maxSubArraySum(index_prob_out)
         else:
             Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
@@ -2398,8 +2398,8 @@ class Model(object):
         """
         # Calculate the loss for y1 and y2
         if self.config['model']['sigmoid_loss']:
-            prob = tf.clip_by_value(self.yp,1e-10,1.0)
-            ce_loss3 = -tf.reduce_mean(tf.reduce_mean(tf.reduce_mean(self.y*tf.log(prob),1),0))
+            self.yp = tf.clip_by_value(self.yp,1e-10,1.0)*tf.cast(self.x_mask, tf.float32)
+            ce_loss3 = -tf.reduce_mean(tf.reduce_mean(tf.reduce_mean(self.y*tf.log(self.yp),1),0))
             # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = ce_loss3
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
