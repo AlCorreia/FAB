@@ -30,7 +30,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID370: FF without reuse, attention with full reuse, word+char(100), nHeads=4, single_loss=true, LR=0.5, layer_reduction, drop_amp = 2.0,  encoder_skip_sentence=0, max_answer=15, double_conv, Q=0.25X freq 1-10k, 3:0, 6B 100:100+100:100",
+                "name": "ID370: Layers: 1(200)+3(100), 6B, attention with reuse in X amd Q, char(100), nHeads=4, single_loss=true, LR=0.5, layer_reduction, drop_amp = 2.0, max_answer=15, double_conv, freq 1-10k",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -74,7 +74,6 @@
 		"one_layer_reduction":true,
 		"matrix_reduction":false,
 		"reduced_layer_dropout_amplification":2.0,
-		"second_loss":false,
 		"single_loss":true,
 		"no_masking_loss_computation":true,
 		"number_of_totens":0,
@@ -89,6 +88,7 @@
 		"conv_attention_kernel":"original",
 		"conv_attention_kernel_size":"1,5,1,5",
 		"max_answer_size": 15,
+		"sigmoid_loss":false,
 		"y1_sel":"double_conv",
 		"conv_selector_kernel_size":9,
         	"y2_sel":"conv2"

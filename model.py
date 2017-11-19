@@ -7,7 +7,7 @@ import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 from tqdm import tqdm
 from random import randint
-from utils import plot, send_mail, EM_and_F1, F1
+from utils import plot, send_mail, EM_and_F1, F1, maxSubArraySum
 from evaluate_dev import evaluate_dev
 import pdb
 
@@ -87,15 +87,14 @@ class Model(object):
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
         self.encoder_pos = tf.placeholder('float32', [self.Bs, None], name='encoder_pos')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
-        self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
+        if not self.config['model']['sigmoid_loss']:
+            self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
         self.mask_sentence = tf.placeholder('float32', [self.Bs, None, None], name='y2')
         if self.config['model']['sentence_skip_steps']>0:
             self.sentence_skip = True
         else:
             self.sentence_skip = False
         # Add another placeholder if a second loss is used
-        if config['model']['second_loss']:
-            self.y3 = tf.placeholder('float32', [self.Bs, None], name='y3')
 
         self.new_emb_mat = tf.placeholder(tf.float32,
                                           [None, self.WEs],
@@ -256,7 +255,12 @@ class Model(object):
         feed_dict['dropout_word_passage:0'] = self.config['train']['dropout_word_passage']
         feed_dict['dropout_last_layer_passage:0'] = self.config['train']['dropout_last_layer_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
-            summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
+            if self.config['model']['sigmoid_loss']:
+                summary, _, loss_val, global_step, max_x, max_q, index_prob_out,tensors_out = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.y, self.Tensors_out],
+                                       feed_dict=feed_dict)
+                Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
+            else:
+                summary, _, loss_val, global_step, max_x, max_q, Start_Index, End_Index = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index],
                                        feed_dict=feed_dict)
             # Write the results to Tensorboard
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
@@ -271,7 +275,11 @@ class Model(object):
                             self.directory + 'ckpt/'+str(round(global_step/1000)) + 'k/model.ckpt')
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
-            Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index, self.train_step], feed_dict=feed_dict)
+            if self.config['model']['sigmoid_loss']:
+                index_prob_out, _ = self.sess.run([self.y, self.train_step], feed_dict=feed_dict)
+                Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
+            else:
+                Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index, self.train_step], feed_dict=feed_dict)
             EM, F1, _, _, _ = EM_and_F1(self.answer, [Start_Index, End_Index])
         #To plot averaged EM and F1 during training
         self.EM_train.append(EM)
@@ -288,8 +296,11 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
-
-        summary, max_x, max_q, Start_Index, End_Index, global_step, Tensors_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step, self.Tensors_out], feed_dict=feed_dict)
+        if self.config['model']['sigmoid_loss']:
+            summary, max_x, max_q, global_step, Tensors_out, index_prob_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.global_step, self.Tensors_out, self.y], feed_dict=feed_dict)
+            Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
+        else:
+            summary, max_x, max_q, Start_Index, End_Index, global_step, Tensors_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step, self.Tensors_out], feed_dict=feed_dict)
         # Write the results to Tensorboard
         EM_dev, F1_dev, y1_correct, y2_correct, y2_greater_y1_correct = EM_and_F1(self.answer, [Start_Index, End_Index])
         self.EM_dev.append(EM_dev)
@@ -315,7 +326,11 @@ class Model(object):
         """
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
-        Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
+        if self.config['model']['sigmoid_loss']:
+            index_prob_out = self.sess.run([self.y], feed_dict=feed_dict)
+            Start_Index, End_Index, prob = maxSubArraySum(index_prob_out)
+        else:
+            Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
         # Write the results to Tensorboard
         return Start_Index, End_Index, prob
 
@@ -1608,21 +1623,35 @@ class Model(object):
                                       kernel_initializer=self.initializer,
                                       name='conv_sel')
             logits = tf.nn.dropout(logits, keep_prob=self.keep_prob_selector)
-            logits = tf.layers.conv2d(logits,
-                                      filters=2,
-                                      kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
-                                      strides=1,
-                                      padding='same',
-                                      use_bias=True,
-                                      kernel_initializer=self.initializer,
-                                      name='conv_sel_2')
+            if self.config['model']['sigmoid_loss']:
+                logits = tf.layers.conv2d(logits,
+                                          filters=1,
+                                          kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
+                                          strides=1,
+                                          padding='same',
+                                          use_bias=True,
+                                          kernel_initializer=self.initializer,
+                                          name='conv_sel_2')
+                logits = tf.squeeze(logits,[2,3])
+                output = tf.sigmoid(logits)
+                return output, logits, [], []
 
-            logits = tf.reshape(logits, [self.Bs, -1, 2])
-            logits1, logits2 = tf.split(logits, 2, 2)
-            logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
-            output1, output2 = self._process_logits(logits1, logits2, mask)
+            else:
+                logits = tf.layers.conv2d(logits,
+                                          filters=2,
+                                          kernel_size=(self.config['model']['conv_selector_kernel_size'], 1),
+                                          strides=1,
+                                          padding='same',
+                                          use_bias=True,
+                                          kernel_initializer=self.initializer,
+                                          name='conv_sel_2')
 
-        return output1, logits1, output2, logits2
+                logits = tf.reshape(logits, [self.Bs, -1, 2])
+                logits1, logits2 = tf.split(logits, 2, 2)
+                logits1, logits2 = tf.reshape(logits1, [self.Bs, -1]), tf.reshape(logits2, [self.Bs, -1])
+                output1, output2 = self._process_logits(logits1, logits2, mask)
+
+                return output1, logits1, output2, logits2
 
 
     def _all_layers_sel(self, Q, X, mask, scope, size_input):
@@ -1646,25 +1675,6 @@ class Model(object):
             logits_y2_out = tf.reduce_mean(tf.concat(logits_y2_vec, 1), 1)
 
         return yp1_out, logits_y1_out, yp2_out, logits_y2_out
-
-    def _second_loss(self, X, mask, scope):
-        """
-        Apply a sigmoid to define the probability of selecting each word
-
-        """
-        length_X = X.get_shape()[1]
-        with tf.variable_scope(scope):
-            X = tf.reshape(X, [self.Bs, -1, 1, self.WEAs])
-            logits = tf.layers.conv2d(X,
-                                      filters=1,
-                                      kernel_size=(1, 1),
-                                      strides=1,
-                                      padding='same',
-                                      use_bias=True,
-                                      kernel_initializer=self.initializer,
-                                      activation=None,
-                                      name='second_loss')
-        return tf.reshape(logits, [self.Bs, -1])
 
     def _sym_double_conv(self, X, mask, scope, size_input):
         """ Select one vector among n vectors by max(w*X) """
@@ -2219,15 +2229,13 @@ class Model(object):
                                                    y1_sel=self.yp,
                                                    size_input=size_input)
 
-        if self.config['model']['max_answer_size'] >0:
-            self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
+        if not self.config['model']['sigmoid_loss']:
+            if self.config['model']['max_answer_size'] >0:
+                self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
 
-        else:
-            self.Start_Index = tf.argmax(self.yp, axis=-1)
-            self.End_Index = tf.argmax(self.yp2, axis=-1)
-
-        if config['model']['second_loss']:
-            self.yp3 = self._second_loss(X=x[-1], mask=mask, scope="y3")
+            else:
+                self.Start_Index = tf.argmax(self.yp, axis=-1)
+                self.End_Index = tf.argmax(self.yp2, axis=-1)
 
     def _build_forward(self):
         """
@@ -2389,7 +2397,13 @@ class Model(object):
             Defines the model's loss function.
         """
         # Calculate the loss for y1 and y2
-        if self.config['model']['single_loss']:
+        if self.config['model']['sigmoid_loss']:
+            prob = tf.clip_by_value(self.yp,1e-10,1.0)
+            ce_loss3 = -tf.reduce_mean(tf.reduce_mean(tf.reduce_mean(self.y*tf.log(prob),1),0))
+            # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
+            self.loss = ce_loss3
+            tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
+        elif self.config['model']['single_loss']:
             pred = self.get_prob_matrix(self.yp, self.yp2)
             truth = self.get_prob_matrix(self.y, self.y2)
             self.loss = tf.reduce_mean(-tf.reduce_sum(truth*tf.log(tf.clip_by_value(pred,1e-10,1.0)), axis=1))
@@ -2402,14 +2416,7 @@ class Model(object):
             self.ce_loss2 = -tf.reduce_sum(self.y2*tf.log(tf.clip_by_value(self.yp2, 1e-10, 1.0)), axis=1)
 
         # Add a second loss
-        if self.config['model']['second_loss']:
-            batch_F1 = F1(self.y, self.y2, self.yp, self.yp2)
-            prob = tf.reduce_max(self.yp, axis=-1) * tf.reduce_max(self.yp2, axis=-1)
-            ce_loss3 = -batch_F1*tf.log(prob)
-            # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
-            self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2, ce_loss3]))
-            tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
-        elif not self.config['model']['single_loss']:
+        if not self.config['model']['single_loss'] and not self.config['model']['sigmoid_loss']:
             self.loss = tf.reduce_mean(tf.add_n([ce_loss, self.ce_loss2]))
             tf.summary.scalar('ce_loss', tf.reduce_mean(ce_loss))
             tf.summary.scalar('ce_loss2', tf.reduce_mean(self.ce_loss2))
@@ -2534,8 +2541,20 @@ class Model(object):
             seq_len = [len(seq[i]) for i in range(len(seq))]
             if max_size is None:
                 max_size = max(seq_len)
-            y3 = [np.concatenate([np.zeros(y1[i][0]), np.ones(y2[i][0]-y1[i][0]+1), np.zeros(max_size-y2[i][0]-1)], axis=0) for i in range(len(seq))]
-            return y3
+            ans_size = [(y2[i][0]-y1[i][0]+1) for i in range(len(seq))]
+            no_ans_size = [(seq_len[i]-ans_size[i]) for i in range(len(seq))]
+            out =  []
+            for i in range(len(seq)):
+                no_ans_size[i] = no_ans_size[i] if no_ans_size[i]>0 else 0.5
+                ans_size[i] = ans_size[i] if ans_size[i]>0 else 0.5
+                y3_i = np.concatenate([-np.ones(y1[i][0])/no_ans_size[i], np.ones(y2[i][0]-y1[i][0]+1)/ans_size[i], -np.ones(seq_len[i]-y2[i][0]-1)/no_ans_size[i], np.zeros(max_size-seq_len[i])], axis=0)
+                if y1[i][0]>0:
+                    y3_i[y1[i][0]-1] = -1/ans_size[i]
+                if y2[i][0]<seq_len[i]-1:
+                    y3_i[y2[i][0]+1] = -1/ans_size[i]
+                out.append(y3_i)
+            #y3 = [np.concatenate([-answer_passage_ratio*np.ones(y1[i][0]), np.ones(y2[i][0]-y1[i][0]+1), -answer_passage_ratio*np.ones(seq_len[i]-y2[i][0]-1), np.zeros(max_size-seq_len[i])], axis=0) for i in range(len(seq))]
+            return out
 
         def padding_chars(seq, max_size_sentence, max_size=None):  # for padding a batch
             seq_len = [len(seq[i][j]) for i in range(len(seq)) for j in range(len(seq[i]))]
@@ -2654,6 +2673,8 @@ class Model(object):
             encoder_pos = padding(encoder_pos, max_size=self.config['pre']['max_question_size'])
             q = padding(q, max_size=self.config['pre']['max_question_size'], toten_ID = list(range(toten_ID_begin, toten_ID_end)))
         else:
+            if self.config['model']['sigmoid_loss']:
+                y3 = padding_y3(x, y1, y2)
             x, y1_new, y2_new = padding_answer(x, y1, y2, label_smoothing=label_smoothing)
             encoder_pos = padding(encoder_pos)
             q = padding(q, toten_ID = list(range(toten_ID_begin, toten_ID_end)))
@@ -2699,17 +2720,17 @@ class Model(object):
             feed_dict[self.qc] = qc
             feed_dict[self.short_words_char] = short_words_list
             feed_dict[self.long_words_char] = long_words_list
-
-        if self.config['model']['second_loss']:
-            feed_dict[self.y3] = padding_y3(x, y1, y2)
+        if self.config['model']['sigmoid_loss']:
+            feed_dict[self.y] = y3
+        else:
+            feed_dict[self.y] = y1_new
+            feed_dict[self.y2] = y2_new
 
 
         # cq = np.zeros([self.Bs, self.Qs, self.Ws], dtype='int32')
         feed_dict[self.x] = x
         feed_dict[self.q] = q
         feed_dict[self.encoder_pos] = encoder_pos
-        feed_dict[self.y] = y1_new
-        feed_dict[self.y2] = y2_new
         feed_dict[self.mask_sentence] = masks_sentence
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
