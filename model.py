@@ -87,7 +87,9 @@ class Model(object):
         self.q = tf.placeholder('int32', [self.Bs, None], name='q')
         self.encoder_pos = tf.placeholder('float32', [self.Bs, None], name='encoder_pos')
         self.y = tf.placeholder('float32', [self.Bs, None], name='y')
-        if not self.config['model']['sigmoid_loss']:
+        if self.config['model']['sigmoid_loss']:
+            self.prob_out = []
+        else:
             self.y2 = tf.placeholder('float32', [self.Bs, None], name='y2')
         self.mask_sentence = tf.placeholder('float32', [self.Bs, None, None], name='y2')
         if self.config['model']['sentence_skip_steps']>0:
@@ -110,8 +112,9 @@ class Model(object):
         self.max_size_q = tf.shape(self.q)
 
         if self.config['model']['sigmoid_loss']:
-            self.prob_out = []
-
+            self.y_mask_1 = tf.cast(tf.greater(self.y,0), tf.int32)
+            self.y_mask = self.x_mask - self.y_mask_1
+            self.y_abs = tf.abs(self.y)
 
         if config['model']['char_embedding']:  # If there is char embedding
             self.COs = config['model']['char_out_size']  # Char output size
@@ -2404,8 +2407,8 @@ class Model(object):
         """
         # Calculate the loss for y1 and y2
         if self.config['model']['sigmoid_loss']:
-            self.yp = tf.clip_by_value(self.yp,1e-10,1.0)
-            ce_loss3 = -tf.reduce_mean(tf.reduce_sum(self.y*tf.log(self.yp),1),0)
+            self.yp = tf.clip_by_value(tf.abs(self.yp - tf.cast(self.y_mask, tf.float32)),1e-10,1.0)
+            ce_loss3 = -tf.reduce_mean(tf.reduce_sum(self.y_abs*tf.log(self.yp),1),0)
             # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = ce_loss3
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
