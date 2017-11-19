@@ -1633,7 +1633,7 @@ class Model(object):
                                           kernel_initializer=self.initializer,
                                           name='conv_sel_2')
                 logits = tf.squeeze(logits,[2,3])
-                output = tf.sigmoid(logits)
+                output = tf.sigmoid(logits)*tf.cast(self.x_mask, tf.float32)
                 return output, logits, [], []
 
             else:
@@ -2398,8 +2398,8 @@ class Model(object):
         """
         # Calculate the loss for y1 and y2
         if self.config['model']['sigmoid_loss']:
-            self.yp = tf.clip_by_value(self.yp,1e-10,1.0)*tf.cast(self.x_mask, tf.float32)
-            ce_loss3 = -tf.reduce_mean(tf.reduce_mean(tf.reduce_mean(self.y*tf.log(self.yp),1),0))
+            self.yp = tf.clip_by_value(self.yp,1e-10,1.0)
+            ce_loss3 = -tf.reduce_mean(tf.reduce_sum(self.y*tf.log(self.yp),1),0)
             # ce_loss3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y3, logits=self.yp3), axis=1)
             self.loss = ce_loss3
             tf.summary.scalar('ce_loss3', tf.reduce_mean(ce_loss3))
