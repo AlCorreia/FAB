@@ -109,6 +109,9 @@ class Model(object):
         self.max_size_x = tf.shape(self.x)
         self.max_size_q = tf.shape(self.q)
 
+        if self.config['model']['sigmoid_loss']:
+            self.prob_out = []
+
 
         if config['model']['char_embedding']:  # If there is char embedding
             self.COs = config['model']['char_out_size']  # Char output size
@@ -256,7 +259,7 @@ class Model(object):
         feed_dict['dropout_last_layer_passage:0'] = self.config['train']['dropout_last_layer_passage']
         if self.sess.run(self.global_step) % self.config['train']['steps_to_save'] == 0:
             if self.config['model']['sigmoid_loss']:
-                summary, _, loss_val, global_step, max_x, max_q, index_prob_out,tensors_out = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.yp, self.Tensors_out],
+                summary, _, loss_val, global_step, max_x, max_q, index_prob_out,tensors_out = self.sess.run([self.summary, self.train_step, self.loss, self.global_step, self.max_size_x, self.max_size_q, self.prob_out, self.Tensors_out],
                                        feed_dict=feed_dict)
                 Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
             else:
@@ -276,7 +279,7 @@ class Model(object):
             self.saver.save(self.sess, self.directory + 'model.ckpt')
         else:
             if self.config['model']['sigmoid_loss']:
-                index_prob_out, _ = self.sess.run([self.yp, self.train_step], feed_dict=feed_dict)
+                index_prob_out, _ = self.sess.run([self.prob_out, self.train_step], feed_dict=feed_dict)
                 Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
             else:
                 Start_Index, End_Index, _ = self.sess.run([self.Start_Index, self.End_Index, self.train_step], feed_dict=feed_dict)
@@ -297,7 +300,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(batch_idxs, is_training=False, dataset=dataset)
         if self.config['model']['sigmoid_loss']:
-            summary, max_x, max_q, global_step, Tensors_out, index_prob_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.global_step, self.Tensors_out, self.yp], feed_dict=feed_dict)
+            summary, max_x, max_q, global_step, Tensors_out, index_prob_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.global_step, self.Tensors_out, self.prob_out], feed_dict=feed_dict)
             Start_Index, End_Index, _ = maxSubArraySum(index_prob_out)
         else:
             summary, max_x, max_q, Start_Index, End_Index, global_step, Tensors_out = self.sess.run([self.summary, self.max_size_x, self.max_size_q, self.Start_Index, self.End_Index, self.global_step, self.Tensors_out], feed_dict=feed_dict)
@@ -327,7 +330,7 @@ class Model(object):
         # Combine the input dictionaries for all the features models
         feed_dict = self.get_feed_dict(valid_idxs, is_training=False, dataset=data_dev)
         if self.config['model']['sigmoid_loss']:
-            index_prob_out = self.sess.run([self.yp], feed_dict=feed_dict)
+            index_prob_out = self.sess.run([self.prob_out], feed_dict=feed_dict)
             Start_Index, End_Index, prob = maxSubArraySum(index_prob_out)
         else:
             Start_Index, End_Index, prob = self.sess.run([self.Start_Index, self.End_Index, tf.reduce_max(self.yp,1)*tf.reduce_max(self.yp2,1)], feed_dict=feed_dict)
@@ -2229,7 +2232,10 @@ class Model(object):
                                                    y1_sel=self.yp,
                                                    size_input=size_input)
 
-        if not self.config['model']['sigmoid_loss']:
+        if self.config['model']['sigmoid_loss']:
+            epsilon = 1e-4
+            self.prob_out = (self.yp+epsilon)/(1-self.yp+epsilon)
+        else:
             if self.config['model']['max_answer_size'] >0:
                 self.Start_Index, self.End_Index = self.get_y1_y2(self.yp, self.yp2)
 
