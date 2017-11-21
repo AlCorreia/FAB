@@ -211,20 +211,20 @@ def get_answer(Start_Index,End_Index,batch_idxs, data):
 def maxSubArraySum(a):
     Start_Index, End_Index, Prob = [], [], []
     for i in range(len(a)):
-        max_so_far = - 1.0
-        max_ending_here = 1.0
+        max_so_far = -1e5
+        max_ending_here = 0.0
         ind_so_far = [0,0]
         ind_here = [0,0]
         for j in range(len(a[i])):
-            max_ending_here = max_ending_here*a[i][j]
+            max_ending_here = max_ending_here + a[i][j]
             ind_here[1] = j
             if (max_so_far < max_ending_here):
                 max_so_far = max_ending_here
                 ind_so_far[0] = ind_here[0]
                 ind_so_far[1] = ind_here[1]
-            if max_ending_here < 1.0:
+            if max_ending_here < 0.0:
                 ind_here[0] = j+1
-                max_ending_here = 1.0
+                max_ending_here = 0.0
         Start_Index.append(ind_so_far[0])
         End_Index.append(ind_so_far[1])
         Prob.append(max_so_far)

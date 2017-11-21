@@ -2237,7 +2237,7 @@ class Model(object):
 
         if self.config['model']['sigmoid_loss']:
             epsilon = 1e-4
-            self.prob_out = (self.yp+epsilon)/(1-self.yp+epsilon)
+            self.prob_out = tf.log((self.yp+epsilon)/(1-self.yp+epsilon))
             self.Tensors_out['yp'] = self.yp
             self.Tensors_out['prob'] = self.prob_out
         else:
@@ -2556,6 +2556,12 @@ class Model(object):
             no_ans_size = [(seq_len[i]-ans_size[i]) for i in range(len(seq))]
             out =  []
             for i in range(len(seq)):
+                if y1[i][0]>0:
+                    ans_size[i] = ans_size[i] + 1
+                    no_ans_size[i] = no_ans_size[i] - 1
+                if y2[i][0]<seq_len[i]-1:
+                    ans_size[i] = ans_size[i] + 1
+                    no_ans_size[i] = no_ans_size[i] - 1
                 no_ans_size[i] = no_ans_size[i] if no_ans_size[i]>0 else 0.5
                 ans_size[i] = ans_size[i] if ans_size[i]>0 else 0.5
                 y3_i = np.concatenate([-np.ones(y1[i][0])/no_ans_size[i], np.ones(y2[i][0]-y1[i][0]+1)/ans_size[i], -np.ones(seq_len[i]-y2[i][0]-1)/no_ans_size[i], np.zeros(max_size-seq_len[i])], axis=0)
