@@ -2564,11 +2564,11 @@ class Model(object):
                     no_ans_size[i] = no_ans_size[i] - 1
                 no_ans_size[i] = no_ans_size[i] if no_ans_size[i]>0 else 0.5
                 ans_size[i] = ans_size[i] if ans_size[i]>0 else 0.5
-                y3_i = np.concatenate([-np.ones(y1[i][0])/no_ans_size[i], np.ones(y2[i][0]-y1[i][0]+1)/ans_size[i], -np.ones(seq_len[i]-y2[i][0]-1)/no_ans_size[i], np.zeros(max_size-seq_len[i])], axis=0)
+                y3_i = np.concatenate([-5/3*np.ones(y1[i][0])/no_ans_size[i], 1/3*np.ones(y2[i][0]-y1[i][0]+1)/ans_size[i], -5/3*np.ones(seq_len[i]-y2[i][0]-1)/no_ans_size[i], np.zeros(max_size-seq_len[i])], axis=0)
                 if y1[i][0]>0:
-                    y3_i[y1[i][0]-1] = -1/ans_size[i]
+                    y3_i[y1[i][0]-1] = -1/3/ans_size[i]
                 if y2[i][0]<seq_len[i]-1:
-                    y3_i[y2[i][0]+1] = -1/ans_size[i]
+                    y3_i[y2[i][0]+1] = -1/3/ans_size[i]
                 out.append(y3_i)
             #y3 = [np.concatenate([-answer_passage_ratio*np.ones(y1[i][0]), np.ones(y2[i][0]-y1[i][0]+1), -answer_passage_ratio*np.ones(seq_len[i]-y2[i][0]-1), np.zeros(max_size-seq_len[i])], axis=0) for i in range(len(seq))]
             return out
