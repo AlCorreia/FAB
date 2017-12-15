@@ -30,7 +30,7 @@
 	},
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
-                "name": "ID370: Layers: 1(200)+3(100), 6B, attention with reuse in X amd Q, char(100), nHeads=4, single_loss=true, LR=0.5, layer_reduction, drop_amp = 2.0, max_answer=15, double_conv, freq 1-10k",
+                "name": "ID383: Layers: 1(200)+3(100), 6B, attention with reuse in X amd Q, char(100), nHeads=4, single_loss=true, LR=0.5, layer_reduction, drop_amp = 2.0, max_answer=15, double_conv, freq 1-10k",
 		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
@@ -101,7 +101,7 @@
 		"steps_to_save": 3000,
 		"steps_to_email":21000,
 		"type": "Adam",
-		"Adam":     {"learning_rate":0.5, "decay_rate":0.5,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":4000.0, "constant_LR":true},
+		"Adam":     {"learning_rate":0.5, "learning_rate_layer_reduction_factor":1.0, "decay_rate":0.5,"beta1":0.9, "beta2":0.98, "epsilon":1e-8, "WarmupSteps":4000.0, "constant_LR":true},
 		"Adadelta": {"learning_rate":1.0, "decay_steps": 1000, "decay_rate": 0.99, "rho":0.95},
 		"Adagrad": {"learning_rate":0.05, "initial_accumulator_value":0.1},
 		"RMS": {"learning_rate":0.05, "decay":0.9, "momentum":0.1},

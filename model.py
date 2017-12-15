@@ -170,6 +170,16 @@ class Model(object):
             self._build_forward()
         self._build_loss()
 
+
+        self.layer_red_vars = []
+        self.other_vars= []
+        #get layer_reduction variables
+        for i in tf.trainable_variables():
+            if 'one_layer_reduction' in i.name: #if it is a layer_reduction variable
+                self.layer_red_vars.append(i)
+            else:
+                self.other_vars.append(i)
+
         # Define optimizer and train step
         if config['train']['type'] == "Adadelta":
             self.learning_rate = tf.train.exponential_decay(
@@ -187,7 +197,9 @@ class Model(object):
             self.learning_rate = config['train']['Adam']['learning_rate']*tf.multiply(
                                     tf.reduce_min([tf.pow(tf.cast(self.global_step, tf.float32), -self.config['train']['Adam']['decay_rate']), tf.multiply(tf.cast(self.global_step,tf.float32), tf.pow(tf.cast(config['train']['Adam']['WarmupSteps'], tf.float32),-config['train']['Adam']['decay_rate']-1.0))]),
                                     tf.pow(tf.cast(self.WEAs, tf.float32), -0.5))
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate if config['train']['Adam']['constant_LR'] else self.config['train']['Adam']['learning_rate'], beta1 = config['train']['Adam']['beta1'], beta2=config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
+            self.optimizer_1 = tf.train.AdamOptimizer(learning_rate=self.learning_rate if config['train']['Adam']['constant_LR'] else self.config['train']['Adam']['learning_rate'], beta1 = config['train']['Adam']['beta1'], beta2=config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
+            reduction_factor = config['train']['Adam']['learning_rate_layer_reduction_factor']
+            self.optimizer_2 = tf.train.AdamOptimizer(learning_rate=self.learning_rate/reduction_factor if config['train']['Adam']['constant_LR'] else self.config['train']['Adam']['learning_rate']/reduction_factor, beta1 = config['train']['Adam']['beta1'], beta2=config['train']['Adam']['beta2'], epsilon = config['train']['Adam']['epsilon'])
 
         elif config['train']['type'] == "Adagrad":
             self.optimizer = tf.train.AdagradOptimizer(
@@ -206,7 +218,12 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
-        self.train_step = optimize_loss(self.loss, global_step=self.global_step, optimizer=self.optimizer, learning_rate = None)
+        grads = tf.gradients(self.loss, self.other_vars + self.layer_red_vars)
+        grads1 = grads[:len(self.other_vars)]
+        grads2 = grads[len(self.other_vars):]
+        train_op1 = self.optimizer_1.apply_gradients(zip(grads1, self.other_vars))
+        train_op2 = self.optimizer_2.apply_gradients(zip(grads2, self.layer_red_vars))
+        self.train_step = tf.group(train_op1, train_op2)
 
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
@@ -214,7 +231,6 @@ class Model(object):
         #     self._build_var_ema()
         # if config.mode == 'train':
         #     self._build_ema()
-
         self.summary = tf.summary.merge_all()
         # Delete if not useful:
         # self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
@@ -2090,7 +2106,7 @@ class Model(object):
                     FFHs_reduct = WEAs_reduct*2
                     Q_Cs = [WEAs_reduct, WEAs_reduct, WEAs_reduct, FFHs_reduct, self.MHs, self.WEAs]  # size of q attention model/q processing size/size of x attention model/number of heads/output_size of X4
                     X_Cs = Q_Cs
-                    q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='Model_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs) #It is already encoded
+                    q_scaled, x_scaled = self._one_layer_reduction(Q=q_scaled, X=x_scaled, mask=mask, scope='one_layer_reduction', switch=False, out_size=self.WEAs, Q_Cs=Q_Cs, X_Cs=X_Cs) #It is already encoded
                 elif ((self.config['model']['encode_char_and_vec_separately']) and (self.config['model']['char_embedding'])):
                     # An encoder for char and word are defined separetely
                     x_word, x_char = tf.split(x_scaled, [self.WEOs, self.COs], axis=2)
