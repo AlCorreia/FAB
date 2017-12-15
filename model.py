@@ -218,13 +218,13 @@ class Model(object):
         # self.train_step = tf.contrib.layers.optimize_loss(
         #    self.loss, global_step=self.global_step, learning_rate=self.learning_rate, optimizer='Adam',
         #    summaries=["gradients"], name='TIBINO')
+
         grads = tf.gradients(self.loss, self.other_vars + self.layer_red_vars)
         grads1 = grads[:len(self.other_vars)]
         grads2 = grads[len(self.other_vars):]
-        train_op1 = self.optimizer_1.apply_gradients(zip(grads1, self.other_vars))
-        train_op2 = self.optimizer_2.apply_gradients(zip(grads2, self.layer_red_vars))
+        train_op1 = self.optimizer_1.apply_gradients(zip(grads1, self.other_vars), self.global_step, name='training1')
+        train_op2 = self.optimizer_2.apply_gradients(zip(grads2, self.layer_red_vars), name='training2')
         self.train_step = tf.group(train_op1, train_op2)
-
         # TODO: Understand the need for the moving average function
         # self.var_ema = None
         # if rep:
