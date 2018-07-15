@@ -31,7 +31,6 @@
 	"model":{
 		"Comment_":"All variables related to the model's architecture and training",
                 "name": "ID383: Layers: 1(200)+3(100), 6B, attention with reuse in X amd Q, char(100), nHeads=4, single_loss=true, LR=0.5, layer_reduction, drop_amp = 2.0, max_answer=15, double_conv, freq 1-10k",
-		"is_Attention_Model": true,
 		"load_checkpoint":false,
 		"run": true,
 		"evaluate_dev": true,
