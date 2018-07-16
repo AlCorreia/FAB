@@ -859,13 +859,13 @@ class Model(object):
                         tf.add(
                             tf.divide(logits, Scaling),
                             tf.multiply(1.0 - tf.nn.dropout(mask, keep_prob=keep_prob_pre_softmax), VERY_LOW_NUMBER)),
-                        dim=dimension)
+                        axis=dimension)
                 else:
                     softmax = tf.nn.softmax(
                         tf.add(
                             tf.divide(logits, Scaling),
                             tf.multiply(1.0 - mask, VERY_LOW_NUMBER)),
-                        dim=dimension)
+                        axis=dimension)
             # Final mask is applied
             if self.config['train']['dropout_attention_post_softmax'] < 1.0:
                 # To normalize softmax sum to 1
