@@ -1,4 +1,4 @@
-# Fully Attention-Based Question-Answering Model (FAB)
+# Fully Attention-Based Information Retriever (FABIR)
 
 ## Requirements
 - gloves: https://nlp.stanford.edu/projects/glove/ - Currently using only the 6B corpus
@@ -6,5 +6,5 @@
 - numpy (punkt)
 - nltk
 - pandas
-- tensorflow
+- tensorflow 1.5 (FABIR does not support later versions yet) 
 - tqdm
