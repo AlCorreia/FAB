@@ -2082,17 +2082,10 @@ class Model(object):
 
         if self.config['model']['char_embedding']:
             with tf.variable_scope("char_emb"):
-                if self.config['model']['pre_trained_char']:
-                    char_emb_mat = tf.get_variable(
-                        "char_emb_mat",
-                        dtype=tf.float32,
-                        initializer=self.config['model']['emb_mat_unk_chars'])  # [CVs,CEs]:
-                    char_emb_mat = tf.concat([char_emb_mat, self.new_char_emb_mat],
-                                         axis=0)
-                else:  # There are not pre-trained characters
-                    char_emb_mat = tf.get_variable(
-                        "char_emb_mat",
-                        initializer=tf.random_normal(shape=[self.CVs, self.CEs], mean=0.0, stddev=1.0, dtype=tf.float32))  # [CVs,CEs]
+                #Add Char Embedding
+                char_emb_mat = tf.get_variable(
+                    "char_emb_mat",
+                    initializer=tf.random_normal(shape=[self.CVs, self.CEs], mean=0.0, stddev=1.0, dtype=tf.float32))  # [CVs,CEs]
                 # Embedding of characters
                 Ac_short = tf.nn.embedding_lookup(char_emb_mat, self.short_words_char)
                 Ac_long = tf.nn.embedding_lookup(char_emb_mat, self.long_words_char)
@@ -2656,6 +2649,4 @@ class Model(object):
         feed_dict[self.is_training] = is_training
         if self.config['pre']['use_glove_for_unk']:
             feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
-        if self.config['model']['pre_trained_char']:
-            feed_dict[self.new_char_emb_mat] = dataset['shared']['emb_mat_known_chars']
         return feed_dict

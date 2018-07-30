@@ -8,11 +8,41 @@ import numpy as np
 import os
 import pdb
 import smtplib
+import nltk
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
+def word_tokenize(tokens):
+    tokenizer_result = [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
+    return tokenizer_result
+
+
+def question_classify(question_string):
+    if 'what' in question_string:
+        return 0
+    elif 'which' in question_string:
+        return 1
+    elif 'who' in question_string or 'whom' in question_string or 'whose' in question_string: #there are only 352 whom and 304 whose
+        return 2
+    elif 'how many'  in question_string:
+         return 3
+    elif 'how much'  in question_string:
+         return 4
+    elif 'how long' in question_string:
+         return 5
+    elif 'how' in question_string: #there were only 64 how often
+         return 6
+    elif 'when' in question_string:
+        return 7
+    elif 'where' in question_string:
+        return 8
+    elif 'why' in question_string:
+        return 9
+    else:
+        return 10
 
 def get_word_span(context, spans, start, stop):
 	search_index = 0
@@ -30,16 +60,16 @@ def get_word_span(context, spans, start, stop):
 	assert len(word_id) > 0, "{} {} {} {}".format(context, spans, start, stop)
 	return word_id[0], (word_id[-1] + 1), word_index[0][0], word_index[-1][0]
 
-def get_words_pos(context, words):
+def get_tokens_pos(context, tokens):
     search_index = 0
-    word_pos =[]
-    for word in words:
-        word_init = context.find(word, search_index)
-        assert word_init >= 0
-        word_end = word_init + len(word)-1
-        word_pos.append([word_init,word_end])
-        search_index = word_end+1
-    return word_pos
+    tokens_pos =[]
+    for token in tokens:
+        token_init = context.find(token, search_index)
+        assert token_init >= 0
+        token_end = token_init + len(token)-1
+        tokens_pos.append([token_init, token_end])
+        search_index = token_end+1
+    return tokens_pos
 
 
 def process_tokens(temp_tokens):

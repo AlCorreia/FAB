@@ -9,7 +9,7 @@ import os
 import pdb
 from random import randint
 from tqdm import tqdm
-from utils import get_word_span, process_tokens, get_words_pos
+from utils import get_word_span, process_tokens, get_tokens_pos, question_classify, word_tokenize
 
 
 def get_word2vec(config, word_counter):
@@ -34,47 +34,6 @@ def get_word2vec(config, word_counter):
     print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), glove_path))
     return word2vec_dict
 
-def create_char2vec(config):
-    glove_path = os.path.join(config['glove']['dir'], "glove.{}.{}d.txt".format(config['glove']['corpus'], config['glove']['vec_size']))
-    vectors = {}
-    with open(glove_path, 'r') as f:
-        for line in f:
-            line_split = line.strip().split(" ")
-            vec = np.array(line_split[1:], dtype=float)
-            word = line_split[0]
-
-            for char in word:
-                if ord(char) < 128:
-                    if char in vectors:
-                        vectors[char] = (vectors[char][0] + vec,
-                                         vectors[char][1] + 1)
-                    else:
-                        vectors[char] = (vec, 1)
-
-    base_name = os.path.splitext(os.path.basename(glove_path))[0] + '-char.txt'
-    with open(os.path.join(config['glove']['dir'], base_name), 'w') as f2:
-        for word in vectors:
-            avg_vector = np.round(
-                (vectors[word][0] / vectors[word][1]), 6).tolist()
-            f2.write(word + " " + " ".join(str(x) for x in avg_vector) + "\n")
-
-
-def get_char2vec(config, char_counter):
-    char_path = os.path.join(config['glove']['dir'], "glove.{}.{}d-char.txt".format(config['glove']['corpus'], config['glove']['vec_size']))
-    # If there is no pre-trained char embedding file, create one
-    if os.path.isfile(char_path) is False:
-        create_char2vec(config)
-    char2vec_dict = {}
-    with open(char_path, 'r', encoding='utf-8') as fh:
-        for line in fh:
-            array = line.lstrip().rstrip().split(" ")
-            char = array[0]
-            vector = list(map(float, array[1:]))
-            if char in char_counter:
-                char2vec_dict[char] = vector
-
-    return char2vec_dict
-
 
 def save(config, data, shared, data_type):
     """
@@ -87,7 +46,7 @@ def save(config, data, shared, data_type):
     json.dump(shared, open(shared_path, 'w'))
 
 
-def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="default", in_path=None):
+def prepro_each(config, data_type, out_name="default", in_path=None):
     """
         Pre-process the whole dataset and create two dictionaries with the
         tokens of each example.
@@ -106,40 +65,12 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         - answerss: the answer text
 
     """
-    # Define the word tokenizer. Only NLTK for now
-    def word_tokenize(tokens):
-        tokenizer_result = [token.replace("''", '"').replace("``", '"') for token in nltk.word_tokenize(tokens)]
-        return tokenizer_result
 
-    def question_classify(tokens):
-        if 'what' in tokens:
-            return 0
-        elif 'which' in tokens:
-            return 1
-        elif 'who' in tokens or 'whom' in tokens or 'whose' in tokens: #there are only 352 whom and 304 whose
-            return 2
-        elif 'how many'  in tokens:
-             return 3
-        elif 'how much'  in tokens:
-             return 4
-        elif 'how long' in tokens:
-             return 5
-        elif 'how' in tokens: #there were only 64 how often
-             return 6
-        elif 'when' in tokens:
-            return 7
-        elif 'where' in tokens:
-            return 8
-        elif 'why' in tokens:
-            return 9
-        else:
-            return 10
-
-
-
+    #Read SQuAD file with all questions/answrrs
     source_path = in_path or os.path.join(config['directories']['source_dir'], "{}-v1.1.json".format(data_type))
     source_data = json.load(open(source_path, 'r'))
 
+    #Initialize every array and dictionary
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
     statistics={}
     statistics['qtype']=np.zeros(11)
@@ -150,9 +81,12 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     word_len = []
     paragraph_len, question_len = [], []
     word_counter, char_counter, word_counter_lower = Counter(), Counter(), Counter()
-    start_ai = int(round(len(source_data['data']) * start_ratio))
-    stop_ai = int(round(len(source_data['data']) * stop_ratio))
-    for ai, article in enumerate(tqdm(source_data['data'][start_ai:stop_ai])):
+
+    #Start iterating over all articles
+    start_artile = 0
+    stop_article = len(source_data['data'])
+    for ai, article in enumerate(tqdm(source_data['data'][start_artile:stop_article])):
+        #Initialize arrays for paragraphs inside articles
         xp, cxp, len_sentences_p, word_pos_p = [], [], [], []
         pp = []
         x.append(xp)
@@ -160,9 +94,9 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
         len_sentences.append(len_sentences_p)
         cx.append(cxp)
         p.append(pp)
+        #process contexts in the pith paragraph from the aith article
         for pi, para in enumerate(article['paragraphs']):
-            # wordss
-            context = para['context']
+            context = para['context'] #Reads raw text from paragraph
             context = context.replace("''", '" ')
             context = context.replace("``", '" ')
             sent_i = nltk.sent_tokenize(context) #Separate text in sentences
@@ -171,36 +105,37 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
             len_sentences_i = [len(sent) for sent in xi] #Compute size of each sentence
             xi = sum(xi, []) #joint every sentence into a single vector
             xi = process_tokens(xi) # process tokens
-            word_pos_i = get_words_pos(context, xi)
-            # given xi, add chars
-            cxi = [list(xij) for xij in xi]
-            max_xc = max([len(list(xij)) for xij in xi])
+            word_pos_i = get_tokens_pos(context, xi)
+            cxi = [list(token) for token in xi] #get char-by-char in every token
+            max_xc = max([len(list(token)) for token in xi]) #get max token length
             len_sentences_p.append(len_sentences_i)
             word_pos_p.append(word_pos_i)
             xp.append(xi)
             cxp.append(cxi)
             pp.append(context)
 
-            for xij in xi:
-                word_counter[xij] += len(para['qas'])
-                word_counter_lower[xij.lower()]+=len(para['qas'])
-                for xijk in xij:
-                    char_counter[xijk] += len(para['qas'])
+            for token in xi:
+                word_counter[token] += len(para['qas'])
+                word_counter_lower[token.lower()]+=len(para['qas'])
+                for char in token:
+                    char_counter[char] += len(para['qas'])
 
             rxi = [ai, pi]
             assert len(x) - 1 == ai
             assert len(x[ai]) - 1 == pi
+            #Evaluate all question/answers for the pith paragraph
             for qa in para['qas']:
-                # get words
-                qi = word_tokenize(qa['question'])
-                qtypei = question_classify(qa['question'].lower())
-                statistics['qtype'][qtypei]=statistics['qtype'][qtypei]+1
-                cqi = [list(qij) for qij in qi]
-                max_qc = max([len(list(qij)) for qij in qi])
+                qi = word_tokenize(qa['question']) #tokenization
+                qtypei = question_classify(qa['question'].lower()) #classify the question by its type: what, when, how, etc
+                statistics['qtype'][qtypei] = statistics['qtype'][qtypei] + 1
+                cqi = [list(token) for token in qi] #get char-by-char in every question token
+                max_qc = max([len(list(token)) for token in qi]) #get max token length
+
+                #Initialize arrays for answers
                 yi = []
                 cyi = []
                 answers = []
-                for answer in qa['answers']:
+                for answer in qa['answers']: #In the dev, there might be more than one answer for each question
                     answer_text = answer['text']
                     answers.append(answer_text)
                     answer_start = answer['answer_start']
@@ -218,11 +153,11 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
 
                     yi.append([yi0, yi1])
                     cyi.append([cyi0, cyi1])
-                for qij in qi:
-                    word_counter_lower[qij.lower()]+=1
-                    word_counter[qij] += 1
-                    for qijk in qij:
-                        char_counter[qijk] += 1
+                for token in qi:
+                    word_counter_lower[token.lower()]+=1
+                    word_counter[token] += 1
+                    for char in token:
+                        char_counter[char] += 1
                 q.append(qi)
                 cq.append(cqi)
                 y.append(yi)
@@ -244,8 +179,6 @@ def prepro_each(config, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="de
     else:
         word2vec_dict = get_word2vec(config, word_counter)
     char2vec_dict = {}
-    if config['model']['pre_trained_char']:
-        char2vec_dict = get_char2vec(config, char_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy, 'word_pos': word_pos,
@@ -278,8 +211,8 @@ def read_data(config, data_type, data_filter=None, data_train=None):
     if data_train is not None: #dev is going to use the same unk chars and words. It changes only its known words from word2vec.
         #CHAR EMBEDDING
         shared['unk_char2idx'] = data_train['shared']['unk_char2idx']
-        shared['known_char2idx'] = data_train['shared']['known_char2idx'] if config['model']['pre_trained_char'] else {}
-        shared['emb_mat_known_chars'] = data_train['shared']['emb_mat_known_chars'] if config['model']['pre_trained_char'] else {}
+        shared['known_char2idx'] = {} #UNUSED
+        shared['emb_mat_known_chars'] = {} #UNUSED
         #WORDS EMBEDDING
         shared['unk_word2idx'] = data_train['shared']['unk_word2idx']
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
@@ -308,14 +241,9 @@ def read_data(config, data_type, data_filter=None, data_train=None):
                                             if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
 
         #CHAR PRE-PROCESSING
-        if config['model']['pre_trained_char']:
-            shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                      enumerate(char for char, count in sorted(char_counter.items())
-                                                if count > config['pre']['char_count_th'] and char not in char2vec_dict)} #threshold =50
-        else:
-            shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                      enumerate(char for char, count in sorted(char_counter.items())
-                                                if count > config['pre']['char_count_th'])} # threshold =50
+        shared['unk_char2idx'] = {char: idx + 2 for idx, char in
+                                  enumerate(char for char, count in sorted(char_counter.items())
+                                            if count > config['pre']['char_count_th'])} # threshold =50
 
         NULL = "-NULL-"
         UNK = "-UNK-"
@@ -343,25 +271,8 @@ def read_data(config, data_type, data_filter=None, data_train=None):
             unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
 
         if config['model']['char_embedding']:  # If there is char embedding
-            if config['model']['pre_trained_char']:
-                char_vocab_size = len(shared['unk_char2idx'])  # vocabulary size of unknown chars
-                char2vec_dict = shared['char2vec']
-
-                shared['known_char2idx'] = {char: idx for idx, char in enumerate(char for char in char2vec_dict.keys() if char not in shared['unk_char2idx'])}
-
-                known_char_idx2vec_dict = {idx: char2vec_dict[char] for char, idx in shared['known_char2idx'].items()}
-                # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-
-                shared['emb_mat_known_chars'] = np.array([known_char_idx2vec_dict[idx] for idx in range(len(known_char_idx2vec_dict))], dtype='float32')
-
-                unk_char_idx2vec_dict = {idx: char2vec_dict[word] for char, idx in shared['unk_char2idx'].items() if char in char2vec_dict }
-                shared['emb_mat_unk_chars'] = np.array([unk_char_idx2vec_dict[idx] if idx in unk_char_idx2vec_dict
-                                else np.random.multivariate_normal(np.zeros(int(config['model']['char_embedding_size'])),
-                                                                   config['model']['variance_char_init']*np.eye(int(config['model']['char_embedding_size'])))
-                                                       for idx in range(char_vocab_size)]) #create random vectors for new words
-            else:
-                char_vocab_size = len(shared['unk_char2idx'])
-                shared['known_char2idx'] = {}
+            char_vocab_size = len(shared['unk_char2idx'])
+            shared['known_char2idx'] = {}
 
     data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
     return data_set

@@ -53,7 +53,6 @@
 		"n_pre_layer": 3,
 		"n_post_layer":0,
                 "char_embedding":true,
-		"pre_trained_char":false,
 		"char_embedding_size":8,
 		"char_convolution_size": 5,
 		"char_convolution_padding":"NOT IMPLEMENTED",
