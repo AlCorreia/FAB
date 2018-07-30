@@ -178,20 +178,20 @@ def prepro_each(config, data_type, out_name="default", in_path=None):
         word2vec_dict = get_word2vec(config, word_counter_lower)
     else:
         word2vec_dict = get_word2vec(config, word_counter)
-    char2vec_dict = {}
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy, 'word_pos': word_pos,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, 'paragraph_len': paragraph_len, 'question_len': question_len, 'word_len': word_len, 'question_type': question_type}
     shared = {'x': x, 'cx': cx, 'p': p, 'len_sent': len_sentences,
               'word_counter': word_counter, 'word_counter_lower': word_counter_lower, 'char_counter': char_counter,
-              'word2vec': word2vec_dict, 'char2vec': char2vec_dict}
+              'word2vec': word2vec_dict}
 
     print("saving ...")
     save(config, data, shared, out_name)
 
 
-def read_data(config, data_type, data_filter=None, data_train=None):
+def read_data(config, data_type, length_filter=True, data_train=None):
+    #If length filter is True it removes questions with passage/question with length above thresholds defined in config file
     data_path = os.path.join(config['directories']['dir'], "data_{}.json".format(data_type))
     shared_path = os.path.join(config['directories']['dir'], "shared_{}.json".format(data_type))
     with open(data_path, 'r') as fh:
@@ -201,14 +201,12 @@ def read_data(config, data_type, data_filter=None, data_train=None):
 
 
     num_examples = len(next(iter(data.values()))) #number of questions
-    #max_par = max([len(shared['x'][i][j]) for i in range(len(shared['x'])) for j in range(len(shared['x'][i]))]) #max paragraph size
-    #max_q = max([len(data['q'][i]) for i in range(len(data['q']))]) # max question size
 
-    valid_idxs, valid_idxs_grouped = data_filter_func(config, data, shared, data_filter)
+    valid_idxs, valid_idxs_grouped = data_clustering(config, data, shared, length_filter)
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
     word2vec_dict = shared['word2vec']
-    if data_train is not None: #dev is going to use the same unk chars and words. It changes only its known words from word2vec.
+    if data_train is not None: #DEV: it is going to use the same unk chars and words from train. It changes only its known words from word2vec.
         #CHAR EMBEDDING
         shared['unk_char2idx'] = data_train['shared']['unk_char2idx']
         shared['known_char2idx'] = {} #UNUSED
@@ -218,77 +216,58 @@ def read_data(config, data_type, data_filter=None, data_train=None):
         shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
         known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
         shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
-    else:
-        char2vec_dict = shared['char2vec']
+    else: #TRAIN
+        #READ CONFIG PARAMETERS
+        number_of_unk = config['pre']['number_of_unk']
+        number_of_totens = config['model']['number_of_totens']
+        NULL = "-NULL-"
+        UNK = "-UNK-"
+        TOTEN = "-TOTEN-"
+
+        #WORD PRE-PROCESSING
         if config['glove']['corpus']=='6B':
             word_counter = shared['word_counter_lower'] #LOWER CASE
         else:
             word_counter = shared['word_counter']
-        char2vec_dict = {}
-        number_of_unk = config['pre']['number_of_unk']
-        number_of_totens = config['model']['number_of_totens']
-        char_counter = shared['char_counter']
-    #WORD PRE-PROCESSING
-        if config['pre']['finetune']: #false
-            shared['unk_word2idx'] = {word: idx + 1 + number_of_unk + number_of_totens for idx, word in
+        # create word2idx for unknown words (not in word2vec)
+        shared['unk_word2idx'] = {word: idx + 1 + number_of_unk + number_of_totens for idx, word in #add 1 for NULL
                               enumerate(word for word, count in sorted(word_counter.items())
-                                            if count > config['pre']['word_count_th'] or (config['pre']['known_if_glove'] and word in word2vec_dict))}
-        else:
-            assert config['pre']['known_if_glove']
-            assert config['pre']['use_glove_for_unk']
-            shared['unk_word2idx'] = {word: idx + 1+number_of_unk + number_of_totens for idx, word in #add 2 to UNK and NULL
-                                  enumerate(word for word, count in sorted(word_counter.items())
-                                            if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
+                                        if count > config['pre']['word_count_th'] and word not in word2vec_dict)} #threshold =10
 
-        #CHAR PRE-PROCESSING
-        shared['unk_char2idx'] = {char: idx + 2 for idx, char in
-                                  enumerate(char for char, count in sorted(char_counter.items())
-                                            if count > config['pre']['char_count_th'])} # threshold =50
-
-        NULL = "-NULL-"
-        UNK = "-UNK-"
-        TOTEN = "-TOTEN-"
         shared['unk_word2idx'][NULL] = 0
         for i in range(number_of_unk):
             shared['unk_word2idx'][UNK+str(i)] = i+1
         for i in range(number_of_totens):
             shared['unk_word2idx'][TOTEN+str(i)] = i + (number_of_unk+1)
+
+        # create word2idx for known words (in word2vec)
+        word2vec_dict = shared['word2vec']
+        shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
+        known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
+        shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
+
+        #CHAR PRE-PROCESSING
+        char_counter = shared['char_counter']
+        shared['unk_char2idx'] = {char: idx + 2 for idx, char in #add 2 to UNK and NULL
+                                  enumerate(char for char, count in sorted(char_counter.items())
+                                            if count > config['pre']['char_count_th'])} # threshold =50
         shared['unk_char2idx'][NULL] = 0
         shared['unk_char2idx'][UNK] = 1
-
-        if config['pre']['use_glove_for_unk']:
-            # create word2idx for uknown and known words
-            word_vocab_size=len(shared['unk_word2idx']) #vocabulary size of unknown words
-            word2vec_dict = shared['word2vec']
-
-            shared['known_word2idx'] = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['unk_word2idx'])}
-
-            known_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['known_word2idx'].items()}
-            # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-
-            shared['emb_mat_known_words'] = np.array([known_idx2vec_dict[idx] for idx in range(len(known_idx2vec_dict))], dtype='float32')
-
-            unk_idx2vec_dict = {idx: word2vec_dict[word] for word, idx in shared['unk_word2idx'].items() if word in word2vec_dict }
-
-        if config['model']['char_embedding']:  # If there is char embedding
-            char_vocab_size = len(shared['unk_char2idx'])
-            shared['known_char2idx'] = {}
+        shared['known_char2idx'] = {} #UNUSED
+        char2vec_dict = {} #UNUSED
 
     data_set={'data':data, 'type':data_type, 'shared':shared, 'valid_idxs':valid_idxs, 'valid_idxs_grouped': valid_idxs_grouped}
     return data_set
 
 
-def data_filter_func(config, data, shared, data_filter):
+def data_clustering(config, data, shared, length_filter=True):
     valid_idxs = []
     x_len = data['paragraph_len']
     q_len = data['question_len']
     word_len = data['word_len']
     # Delete paragraphs and questions longer than threshold.
-    if data_filter: #If it is desired to filter some questions
+    if length_filter: #If it is desired to filter some questions
         for i in range(len(data['q'])):
-            #q = data['q'][i]
-            #rx = data['*x'][i]
-            #x = shared['x'][rx[0]][rx[1]]
             if (q_len[i] <= config['pre']['max_question_size']) and (x_len[i] <= config['pre']['max_paragraph_size']) and (word_len[i]<=config['pre']['max_word_size']):
                 valid_idxs.append(i)
     else:
@@ -305,7 +284,6 @@ def data_filter_func(config, data, shared, data_filter):
     valid_idxs_grouped = []
     index = 0
     # Compute the n_chunks groups of questions
-    # TODO: I guess there might be a more elegant way than using this for if else
     for i in range(n_chunks):
         if remainder > 0:
             sub_list = ordered_valid_idxs[index:index+chunk_size+1]

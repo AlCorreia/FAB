@@ -2051,13 +2051,12 @@ class Model(object):
         with tf.variable_scope("word_emb"):
             # TODO: Having a config variable for this is not the best solution
             # TODO: Save the embedding matrix somewhere else
-            word_emb_mat = tf.get_variable(
+            word_emb_mat_unk = tf.get_variable(
                 "word_emb_mat",
                 dtype=tf.float32,
                 shape=[self.WVs, self.WEs],
                 initializer=self.initializer)  # [WVs,WEAs]
-            if config['pre']['use_glove_for_unk']:
-                word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat],
+            word_emb_mat = tf.concat([word_emb_mat_unk, self.new_emb_mat],
                                          axis=0)
             with tf.name_scope("word"):
                 Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [Bs,Ps,Hn]
@@ -2647,6 +2646,5 @@ class Model(object):
         feed_dict[self.encoder_pos] = encoder_pos
         feed_dict[self.mask_sentence] = masks_sentence
         feed_dict[self.is_training] = is_training
-        if self.config['pre']['use_glove_for_unk']:
-            feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
+        feed_dict[self.new_emb_mat] = dataset['shared']['emb_mat_known_words']
         return feed_dict

@@ -17,15 +17,12 @@
 		"Comments_":"Define preprocessing. Run: if the preprocess is run. Split: Split paragraph into sentences. word_count_th=number of times a word nees to appear to be counted as known",
 		"run": false,
 		"n_chunks": 30,
-		"finetune": false,
-		"data_filter": true,
+		"size_filter": true,
 		"word_count_th": 100,
 		"char_count_th": 50,
 		"max_question_size": 60,
 		"max_paragraph_size": 400,
 		"max_word_size": 20,
-		"known_if_glove": true,
-		"use_glove_for_unk": true,
 		"number_of_unk":1
 	},
 	"model":{

@@ -31,8 +31,8 @@ def main(config):
         prepro_each(config=config, data_type='train', out_name='train') # to preprocess the train data
         prepro_each(config=config, data_type='dev', out_name='dev') # to preprocess the dev data
     if config['model']['run']:
-        data = read_data(config, 'train', data_filter=True)
-        data_dev = read_data(config, 'dev', data_filter=(not config['train']['full_dev_ev']), data_train=data)
+        data = read_data(config, 'train', length_filter=config['pre']['size_filter'])
+        data_dev = read_data(config, 'dev', length_filter=(not config['train']['full_dev_ev']), data_train=data)
         # update config with max_word_size, max_passage_size, embedded_vector
         config = update_config(config, data)
         # Create an instance of the model
